@@ -1,0 +1,98 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: ai-quant-backend
+  task:
+    scheduling:
+      # 多线程调度:避免某次真实行情拉取较慢时阻塞 K线/WS 等其它定时任务
+      pool:
+        size: 3
+      thread-name-prefix: sched-
+  datasource:
+    # 本地开发:H2 嵌入式数据库(MySQL 模式方言),免安装 MySQL。
+    # 数据落盘到 java_backend/data/ai_quant.mv.db;切回 MySQL 时改回下方注释配置。
+    url: jdbc:h2:file:./data/ai_quant;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+    # 生产 MySQL 配置(需先安装/启动 MySQL 8.0):
+    # url: jdbc:mysql://localhost:3306/ai_quant?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false
+    # username: root
+    # password: root
+    # driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema-h2.sql
+      continue-on-error: true
+  redis:
+    host: localhost
+    port: 6379
+    database: 0
+    timeout: 3000ms
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.aiquant.model
+  configuration:
+    map-underscore-to-camel-case: true
+
+# 短信配置
+sms:
+  # 开发态:true=响应回传 mock_code(无真实短信网关);生产必须 false 并接短信网关
+  mock-return-code: ${SMS_MOCK_RETURN_CODE:true}
+
+# 支付配置
+payment:
+  # 开发态:true=模拟支付直接置 paid;生产必须 false,由支付网关回调置 paid
+  mock-enabled: ${PAYMENT_MOCK_ENABLED:true}
+
+# 跨域配置(逗号分隔,生产注入正式域名白名单)
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+
+# 用户交易所 API Key AES 加密密钥(生产必须环境变量注入,见 application-prod.yml)
+security:
+  api-key-secret: ${API_KEY_SECRET:aiquant-default-api-key-secret!}
+
+# JWT 配置
+jwt:
+  # 生产环境请通过环境变量 JWT_SECRET 注入,不要使用默认值
+  secret: ${JWT_SECRET:aS1hbS1hLXF1YW50LWFwcC1zZWNyZXQta2V5LWZvci1qd3QtdG9rZW4tMjAyNg==}
+  expiration: 86400000  # 24小时(毫秒)
+  header: Authorization
+  prefix: "Bearer "
+
+# 风控配置
+risk:
+  # 单笔最大亏损比例
+  single-loss-ratio: 0.02
+  # 日亏损熔断阈值
+  daily-loss-circuit-breaker: 0.03
+  # 最大持仓数
+  max-positions: 5
+  # 检查间隔(秒)
+  check-interval: 600
+
+# AI 服务(Python FastAPI)
+ai:
+  service-url: ${AI_SERVICE_URL:http://localhost:8000}
+  # 自动执行开关:running 监控的 AI 信号自动下单(生产如需关闭设 AI_AUTO_TRADE_ENABLED=false)
+  auto-trade-enabled: ${AI_AUTO_TRADE_ENABLED:true}
+  # 扫描执行间隔(毫秒)
+  execution-interval-ms: 15000
+
+# 交易所配置
+exchange:
+  okx:
+    base-url: https://www.okx.com
+    api-key: ${OKX_API_KEY:}
+    secret-key: ${OKX_SECRET_KEY:}
+    passphrase: ${OKX_PASSPHRASE:}

@@ -1,0 +1,43 @@
+name: ai_quant_app
+description: AI 量化交易 APP - 多智能体协同 AI 驱动量化交易
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 状态管理
+  provider: ^6.1.1
+  # 网络请求
+  dio: ^5.4.0
+  # 本地存储
+  shared_preferences: ^2.2.2
+  # 路由
+  go_router: ^13.0.0
+  # 图表
+  fl_chart: ^0.66.0
+  # WebSocket
+  web_socket_channel: ^2.4.0
+  # 国际化
+  intl: ^0.18.1
+  # 加密
+  crypto: ^3.0.3
+  # JSON 序列化
+  json_annotation: ^4.8.1
+  # 下拉刷新
+  pull_to_refresh: ^2.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  json_serializable: ^6.7.1
+  build_runner: ^2.4.7
+
+flutter:
+  uses-material-design: true
+  # 注意: 如需添加图片资源,请先创建 assets/images/ 目录并在下方声明;
+  # 代码中的 fontFamily: 'RobotoMono' 在字体未注册时会自动回退到默认字体

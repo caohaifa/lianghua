@@ -1,0 +1,40 @@
+# AI 量化多 Agent 框架依赖
+# Python >= 3.10
+
+# AI / LLM 框架
+openai>=1.12.0
+langchain>=0.1.0
+langchain-openai>=0.0.5
+crewai>=0.30.0
+autogen>=0.2.0
+
+# 数据处理
+pandas>=2.2.0
+numpy>=1.26.0
+ta>=0.11.0          # 技术指标计算
+
+# 情绪分析
+transformers>=4.40.0
+torch>=2.2.0
+
+# 回测
+backtrader>=1.9.78
+
+# 交易所对接
+ccxt>=4.2.0
+
+# 异步与通信
+asyncio-compat>=0.1.2
+aiohttp>=3.9.0
+websockets>=12.0
+
+# Web 服务(FastAPI 对接 Java 后端)
+fastapi>=0.110.0
+uvicorn>=0.29.0
+
+# 可视化
+plotly>=5.20.0
+
+# 工具
+pydantic>=2.6.0
+python-dotenv>=1.0.0

@@ -1,0 +1,26 @@
+# 构建产物
+java_backend/target/
+flutter_app/build/
+flutter_app/.dart_tool/
+flutter_app/.flutter-plugins*
+admin_web/node_modules/
+admin_web/dist/
+
+# 运行时数据与日志
+data/
+*.log
+flutter_*.txt
+
+# Python
+__pycache__/
+*.pyc
+
+# IDE / 系统
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# 测试截图
+screenshots/
