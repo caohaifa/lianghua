@@ -30,14 +30,17 @@ class DecisionAgent(BaseAgent):
         ]
 
     async def run(self):
-        """主循环: 消费任务队列"""
+        """主循环: 事件驱动消费 asyncio.Queue(无任务时挂起,不占 CPU,零空等延迟)"""
         self.status = AgentStatus.ONLINE
         logger.info(f"[{self.name}] 启动, 五因子门控阈值={FACTOR_THRESHOLD}/5")
         while True:
-            if self.tasks_queue:
-                task = self.tasks_queue.pop(0)
+            task = await self.tasks_queue.get()
+            try:
                 await self._process_task(task)
-            await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"[{self.name}] 主循环异常: {e}")
+            finally:
+                self.tasks_queue.task_done()
 
     async def _process_task(self, task: AgentTask):
         """处理决策任务"""
@@ -54,7 +57,7 @@ class DecisionAgent(BaseAgent):
         五因子门控决策
         返回: {action, direction, confidence, reason, factors}
         """
-        # 并行计算五因子
+        # 并行计算五因子(注:当前五因子均为纯 CPU、无 await,不构成真并发)
         results: list[FactorResult] = await asyncio.gather(
             *[f.evaluate(context) for f in self.factors]
         )

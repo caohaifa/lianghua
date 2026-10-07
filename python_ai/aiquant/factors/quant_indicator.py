@@ -76,11 +76,17 @@ class QuantIndicatorFactor(BaseFactor):
 
     @staticmethod
     def _calc_rsi(prices: np.ndarray, period: int = 14) -> float:
+        """Wilder 平滑 RSI: 使用 EMA 递推而非简单平均,更贴近标准定义"""
         deltas = np.diff(prices)
         gains = np.where(deltas > 0, deltas, 0)
         losses = np.where(deltas < 0, -deltas, 0)
-        avg_gain = np.mean(gains[-period:])
-        avg_loss = np.mean(losses[-period:])
+        # 初始种子值: 前 period 个值的简单平均
+        avg_gain = float(np.mean(gains[:period]))
+        avg_loss = float(np.mean(losses[:period]))
+        # 之后用 Wilder 平滑: avg = (prev_avg * (period-1) + current) / period
+        for i in range(period, len(gains)):
+            avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+            avg_loss = (avg_loss * (period - 1) + losses[i]) / period
         if avg_loss == 0:
             return 100.0
         rs = avg_gain / avg_loss
@@ -88,11 +94,20 @@ class QuantIndicatorFactor(BaseFactor):
 
     @staticmethod
     def _calc_macd_histogram(prices: np.ndarray) -> float:
-        ema12 = np.convolve(prices, np.exp(np.linspace(-1, 0, 12) / 12), 'valid')
-        ema26 = np.convolve(prices, np.exp(np.linspace(-1, 0, 26) / 26), 'valid')
-        macd = ema12[-len(ema26):] - ema26
-        signal = np.convolve(macd, np.exp(np.linspace(-1, 0, 9) / 9), 'valid')
-        return float(macd[-1] - signal[-1])
+        """标准 EMA 递推计算 MACD 柱状图(避免 convolve 近似偏差)"""
+        def ema(data: np.ndarray, span: int) -> np.ndarray:
+            alpha = 2.0 / (span + 1)
+            result = np.empty_like(data, dtype=float)
+            result[0] = data[0]
+            for i in range(1, len(data)):
+                result[i] = alpha * data[i] + (1 - alpha) * result[i - 1]
+            return result
+
+        ema12 = ema(prices, 12)
+        ema26 = ema(prices, 26)
+        macd_line = ema12 - ema26
+        signal_line = ema(macd_line, 9)
+        return float(macd_line[-1] - signal_line[-1])
 
     @staticmethod
     def _calc_boll_position(prices: np.ndarray, period: int = 20) -> float:

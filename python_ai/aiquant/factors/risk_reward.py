@@ -29,17 +29,34 @@ class RiskRewardFactor(BaseFactor):
         price_changes = [abs(recent_prices[i] - recent_prices[i - 1]) for i in range(1, len(recent_prices))]
         atr = sum(price_changes) / len(price_changes) if price_changes else current * 0.02
 
-        stop_loss = current - 2 * atr  # 止损
-        target = current + 3 * atr     # 目标
+        # 多头 RR
+        long_sl = current - 2 * atr
+        long_tp = current + 3 * atr
+        long_risk = current - long_sl
+        long_reward = long_tp - current
+        long_rr = long_reward / long_risk if long_risk > 0 else 0
 
-        risk = current - stop_loss
-        reward = target - current
-        rr_ratio = reward / risk if risk > 0 else 0
+        # 空头 RR
+        short_sl = current + 2 * atr
+        short_tp = current - 3 * atr
+        short_risk = short_sl - current
+        short_reward = current - short_tp
+        short_rr = short_reward / short_risk if short_risk > 0 else 0
+
+        # 取更优的方向
+        if long_rr >= short_rr:
+            direction = SignalDirection.LONG
+            rr_ratio = long_rr
+            stop_loss, target = long_sl, long_tp
+        else:
+            direction = SignalDirection.SHORT
+            rr_ratio = short_rr
+            stop_loss, target = short_sl, short_tp
 
         if rr_ratio >= RISK_REWARD_MIN:
-            direction = SignalDirection.LONG  # 风险收益比好,偏向做多
             status = FactorStatus.PASS
-            detail = f"RR={rr_ratio:.2f} >= {RISK_REWARD_MIN}, 止损={stop_loss:.2f}, 目标={target:.2f}"
+            side = "多" if direction == SignalDirection.LONG else "空"
+            detail = f"RR={rr_ratio:.2f}({side}) >= {RISK_REWARD_MIN}, 止损={stop_loss:.2f}, 目标={target:.2f}"
         else:
             direction = SignalDirection.NEUTRAL
             status = FactorStatus.FAIL
