@@ -31,6 +31,7 @@ class _OrderSheetState extends State<OrderSheet> {
   String _orderType = 'market';
   final _amountCtrl = TextEditingController();
   final _priceCtrl = TextEditingController();
+  final _searchCtrl = TextEditingController();
   bool _submitting = false;
 
   @override
@@ -44,6 +45,7 @@ class _OrderSheetState extends State<OrderSheet> {
   void dispose() {
     _amountCtrl.dispose();
     _priceCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -78,10 +80,17 @@ class _OrderSheetState extends State<OrderSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final quotes = context.watch<MarketProvider>().quotes;
-    _symbol ??= quotes.isNotEmpty ? quotes.first.symbol : null;
+    final allQuotes = context.watch<MarketProvider>().quotes;
+    _symbol ??= allQuotes.isNotEmpty ? allQuotes.first.symbol : null;
+    // 搜索过滤:按代码/名称模糊匹配
+    final query = _searchCtrl.text.trim().toLowerCase();
+    final quotes = query.isEmpty
+        ? allQuotes
+        : allQuotes.where((q) =>
+            q.symbol.toLowerCase().contains(query) ||
+            q.name.toLowerCase().contains(query)).toList();
     Quote? selectedQuote;
-    for (final q in quotes) {
+    for (final q in allQuotes) {
       if (q.symbol == _symbol) {
         selectedQuote = q;
         break;
@@ -99,8 +108,29 @@ class _OrderSheetState extends State<OrderSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('新建委托', style: AppTheme.headline),
+          const Text('新建委托', style: AppTheme.headline),
           const SizedBox(height: 16),
+          // 标的搜索框
+          SizedBox(
+            height: 40,
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (_) => setState(() {}),
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: '搜索标的',
+                prefixIcon: const Icon(Icons.search, size: 18),
+                filled: true,
+                fillColor: const Color(0xFF23282F),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             initialValue: _symbol,
             decoration: const InputDecoration(labelText: '标的'),

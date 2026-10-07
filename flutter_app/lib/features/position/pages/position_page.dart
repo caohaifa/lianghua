@@ -128,7 +128,7 @@ class _AccountCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text('浮动盈亏 ', style: AppTheme.caption),
+              const Text('浮动盈亏 ', style: AppTheme.caption),
               PnlNumber(value: account.totalPnlPct, isPercentage: true),
             ],
           ),

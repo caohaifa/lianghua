@@ -273,14 +273,14 @@ class _StrategyList extends StatelessWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('监控标的', style: AppTheme.caption),
+                      const Text('监控标的', style: AppTheme.caption),
                       Text('${e.value.length}', style: AppTheme.numberM),
                     ],
                   ),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text('运行中', style: AppTheme.caption),
+                      const Text('运行中', style: AppTheme.caption),
                       Text('$running', style: AppTheme.numberM),
                     ],
                   ),

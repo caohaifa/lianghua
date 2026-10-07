@@ -268,6 +268,23 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// 重置密码(短信验证码 + 新密码)
+  Future<bool> resetPassword(
+      String phone, String code, String newPassword) async {
+    try {
+      await ApiClient().dio.post('/auth/password/reset', data: {
+        'phone': phone,
+        'code': code,
+        'new_password': newPassword,
+      });
+      return true;
+    } catch (e) {
+      _errorMessage = '密码重置失败';
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// 退出登录(清除 JWT → 回登录页)
   Future<void> logout() async {
     await ApiClient().clearTokens();

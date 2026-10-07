@@ -47,7 +47,7 @@ class MonitorDetailPage extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0x26FFB300),
+                color: const Color(0x26F0B90B),
                 borderRadius: BorderRadius.circular(AppTheme.tagRadius),
               ),
               child: const Text(

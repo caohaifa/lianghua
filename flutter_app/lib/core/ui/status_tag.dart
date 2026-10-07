@@ -8,14 +8,15 @@ class StatusTag extends StatelessWidget {
   final String label;
   final StatusType type;
 
-  const StatusTag({super.key, required this.label, this.type = StatusType.normal});
+  const StatusTag(
+      {super.key, required this.label, this.type = StatusType.normal});
 
   @override
   Widget build(BuildContext context) {
     final (bgColor, textColor, icon) = switch (type) {
-      StatusType.normal => (const Color(0x2600C853), AppTheme.bull, '🟢'),
-      StatusType.warning => (const Color(0x26FFB300), AppTheme.warning, '🟡'),
-      StatusType.danger => (const Color(0x26FF3B30), AppTheme.bear, '🔴'),
+      StatusType.normal => (const Color(0x260ECB81), AppTheme.bull, '🟢'),
+      StatusType.warning => (const Color(0x26F0B90B), AppTheme.warning, '🟡'),
+      StatusType.danger => (const Color(0x26F6465D), AppTheme.bear, '🔴'),
     };
 
     return Container(
@@ -26,7 +27,8 @@ class StatusTag extends StatelessWidget {
       ),
       child: Text(
         '$icon $label',
-        style: TextStyle(color: textColor, fontSize: 10, fontWeight: FontWeight.w500),
+        style: TextStyle(
+            color: textColor, fontSize: 10, fontWeight: FontWeight.w500),
       ),
     );
   }

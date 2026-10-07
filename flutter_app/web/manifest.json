@@ -1,11 +1,11 @@
 {
-    "name": "ai_quant_app",
-    "short_name": "ai_quant_app",
+    "name": "AI Quant - 量化交易平台",
+    "short_name": "AI Quant",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "AI 量化交易平台 - 智能策略、实盘交易、风险管控一体化",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

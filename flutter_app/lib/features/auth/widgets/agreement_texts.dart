@@ -136,6 +136,32 @@ const kPrivacyPolicy = AgreementDoc(
 ''',
 );
 
+/// 《量化交易服务协议》
+const kQuantServiceAgreement = AgreementDoc(
+  id: 'quant_service',
+  title: '《量化交易服务协议》',
+  required: false,
+  content: '''
+第一条 服务内容
+1.1 本协议为您与 AI 量化平台就量化交易辅助服务所缔结的协议。
+1.2 平台提供行情数据、AI 决策信号、策略回测、自动化交易执行等服务,不构成任何投资建议。
+
+第二条 风险提示
+2.1 量化交易存在本金损失风险,历史回测结果不代表未来实际收益。
+2.2 AI 决策信号基于历史数据与算法模型生成,无法保证盈利,您应结合自身判断做出交易决策。
+2.3 市场极端行情(如闪崩、流动性枯竭)下,策略可能出现超出预期的亏损。
+
+第三条 责任与义务
+3.1 您应确保所绑定的交易所 API Key 权限与资金安全由您自行负责。
+3.2 因网络、系统故障导致的交易延迟或失败,平台不承担相应损失。
+3.3 您不得利用平台服务从事操纵市场、洗钱等违法违规行为。
+
+第四条 服务变更与终止
+4.1 平台有权根据监管要求或业务需要调整服务内容,并提前通知您。
+4.2 您可随时停止使用本服务并解绑 API Key。
+''',
+);
+
 /// 协议签署页的 4 份协议(②③ 🔴 强制阅读)
 const kSignAgreements = <AgreementDoc>[
   kUserAgreement,
@@ -199,13 +225,16 @@ class _AgreementViewerPageState extends State<AgreementViewerPage> {
               child: SingleChildScrollView(
                 controller: _scrollCtrl,
                 padding: const EdgeInsets.all(AppTheme.pagePadding),
-                child: Text(widget.doc.content, style: AppTheme.body.copyWith(height: 1.8)),
+                child: Text(widget.doc.content,
+                    style: AppTheme.body.copyWith(height: 1.8)),
               ),
             ),
             Padding(
               padding: const EdgeInsets.all(AppTheme.pagePadding),
               child: ElevatedButton(
-                onPressed: _reachedBottom ? () => Navigator.of(context).pop(true) : null,
+                onPressed: _reachedBottom
+                    ? () => Navigator.of(context).pop(true)
+                    : null,
                 child: Text(_reachedBottom ? '我已阅读并理解' : '请滑动阅读全文'),
               ),
             ),

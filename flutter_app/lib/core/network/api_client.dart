@@ -7,7 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// HTTP 客户端单例
 class ApiClient {
-  static const String baseUrl = 'http://localhost:8080/api/v1';
+  /// API 基地址:开发默认 localhost,生产通过 --dart-define=API_BASE_URL=xxx 注入
+  static const String baseUrl = String.fromEnvironment('API_BASE_URL',
+      defaultValue: 'http://localhost:8080/api/v1');
   static const Duration timeout = Duration(seconds: 15);
 
   ApiClient._();
@@ -77,7 +79,7 @@ class ApiClient {
     final rand = Random.secure();
     final seed = '${DateTime.now().microsecondsSinceEpoch}-'
         '${rand.nextInt(1 << 30)}-${rand.nextInt(1 << 30)}-${rand.nextInt(1 << 30)}';
-    final fp = md5.convert(utf8.encode(seed)).toString();
+    final fp = sha256.convert(utf8.encode(seed)).toString();
     await _prefs.setString('device_fp', fp);
     return fp;
   }

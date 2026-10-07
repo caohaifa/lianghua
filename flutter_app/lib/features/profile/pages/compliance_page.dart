@@ -14,10 +14,10 @@ class CompliancePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final signed = context.watch<AuthProvider>().user?.agreementSigned ?? false;
     final items = [
-      (title: '用户协议', text: kUserAgreement),
-      (title: '隐私政策', text: kPrivacyPolicy),
-      (title: '风险揭示书', text: null),
-      (title: '量化交易服务协议', text: null),
+      (title: '用户协议', doc: kUserAgreement),
+      (title: '隐私政策', doc: kPrivacyPolicy),
+      (title: '风险揭示书', doc: kRiskDisclosure),
+      (title: '量化交易服务协议', doc: kQuantServiceAgreement),
     ];
 
     return Scaffold(
@@ -30,20 +30,18 @@ class CompliancePage extends StatelessWidget {
           final item = items[i];
           return FinanceCard(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            onTap: item.text != null
-                ? () => AgreementViewerPage.open(context, item.text!)
-                : null,
+            onTap: () => AgreementViewerPage.open(context, item.doc),
             child: Row(
               children: [
-                const Icon(Icons.assignment_outlined, color: AppTheme.brandPrimary, size: 22),
+                const Icon(Icons.assignment_outlined,
+                    color: AppTheme.brandPrimary, size: 22),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(item.title, style: AppTheme.body),
-                      Text(item.text != null ? '点击查看全文' : '注册时已勾选确认',
-                          style: AppTheme.caption),
+                      const Text('点击查看全文', style: AppTheme.caption),
                     ],
                   ),
                 ),

@@ -15,16 +15,17 @@ class AboutPage extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 24),
-            const Icon(Icons.trending_up, size: 64, color: AppTheme.brandPrimary),
+            const Icon(Icons.trending_up,
+                size: 64, color: AppTheme.brandPrimary),
             const SizedBox(height: 12),
-            Text('AI 量化', style: AppTheme.display),
+            const Text('AI 量化', style: AppTheme.display),
             const SizedBox(height: 4),
             const Text('V1.0.0', style: AppTheme.caption),
             const SizedBox(height: 24),
-            FinanceCard(
-              padding: const EdgeInsets.all(16),
+            const FinanceCard(
+              padding: EdgeInsets.all(16),
               child: Column(
-                children: const [
+                children: [
                   _AboutRow(label: '产品', value: '多智能体协同量化交易平台'),
                   Divider(color: AppTheme.divider, height: 20),
                   _AboutRow(label: '决策引擎', value: '五因子门控决策'),
@@ -37,7 +38,7 @@ class AboutPage extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0x26FFB300),
+                color: const Color(0x26F0B90B),
                 borderRadius: BorderRadius.circular(AppTheme.tagRadius),
               ),
               child: const Text(

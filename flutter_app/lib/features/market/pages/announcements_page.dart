@@ -14,6 +14,7 @@ class AnnouncementsPage extends StatefulWidget {
 class _AnnouncementsPageState extends State<AnnouncementsPage> {
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -22,12 +23,19 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final res = await ApiClient().dio.get('/announcements');
+      if (!mounted) return;
       setState(() =>
           _items = (res.data['data'] as List).cast<Map<String, dynamic>>());
-    } catch (_) {} finally {
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '加载失败,请检查网络');
+    } finally {
       setState(() => _loading = false);
     }
   }
@@ -38,9 +46,20 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
       appBar: AppBar(title: const Text('系统公告')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _items.isEmpty
-              ? const Center(child: Text('暂无公告', style: AppTheme.caption))
-              : RefreshIndicator(
+          : _error != null
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_error!, style: AppTheme.caption),
+                      const SizedBox(height: 12),
+                      OutlinedButton(onPressed: _load, child: const Text('重试')),
+                    ],
+                  ),
+                )
+              : _items.isEmpty
+                  ? const Center(child: Text('暂无公告', style: AppTheme.caption))
+                  : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.separated(
                     physics: const AlwaysScrollableScrollPhysics(),

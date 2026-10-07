@@ -104,7 +104,7 @@ class _ApiKeysPageState extends State<ApiKeysPage> {
                                 CircleAvatar(
                                   backgroundColor:
                                       AppTheme.brandPrimary.withValues(alpha: 0.15),
-                                  child: Icon(Icons.currency_exchange,
+                                  child: const Icon(Icons.currency_exchange,
                                       color: AppTheme.brandPrimary),
                                 ),
                                 const SizedBox(width: 12),

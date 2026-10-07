@@ -66,10 +66,10 @@ class _LoginPageState extends State<LoginPage> {
                 const Icon(Icons.trending_up,
                     size: 56, color: AppTheme.brandPrimary),
                 const SizedBox(height: 8),
-                Text('AI 量化',
+                const Text('AI 量化',
                     style: AppTheme.display, textAlign: TextAlign.center),
                 const SizedBox(height: 4),
-                Text('多智能体协同 · 五因子门控决策',
+                const Text('多智能体协同 · 五因子门控决策',
                     style: AppTheme.caption, textAlign: TextAlign.center),
                 const SizedBox(height: 32),
 
@@ -165,14 +165,13 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ],
                         ),
-                      // 忘记密码 → 切换验证码登录
+                      // 忘记密码 → 短信验证码重置密码
                       if (_mode == _LoginMode.password)
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            onPressed: () =>
-                                setState(() => _mode = _LoginMode.smsCode),
-                            child: Text('忘记密码?',
+                            onPressed: _showResetPasswordDialog,
+                            child: const Text('忘记密码?',
                                 style: TextStyle(
                                     color: AppTheme.textSecondary,
                                     fontSize: 13)),
@@ -217,7 +216,7 @@ class _LoginPageState extends State<LoginPage> {
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Text(auth.errorMessage!,
-                              style: TextStyle(
+                              style: const TextStyle(
                                   color: AppTheme.bear, fontSize: 13)),
                         ),
                     ],
@@ -240,19 +239,19 @@ class _LoginPageState extends State<LoginPage> {
                 // 注册入口(注册成功后自动填充手机号)
                 TextButton(
                   onPressed: _goRegister,
-                  child: Text('没有账号?立即注册',
+                  child: const Text('没有账号?立即注册',
                       style: TextStyle(color: AppTheme.brandPrimary)),
                 ),
                 const SizedBox(height: 8),
-                // 第三方登录(微信 / Apple ID)
-                Row(
+                // 第三方登录(微信 / Apple ID) + 内测体验
+                const Row(
                   children: [
-                    const Expanded(child: Divider(color: AppTheme.divider)),
+                    Expanded(child: Divider(color: AppTheme.divider)),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text('第三方登录', style: AppTheme.caption),
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: Text('其他登录方式', style: AppTheme.caption),
                     ),
-                    const Expanded(child: Divider(color: AppTheme.divider)),
+                    Expanded(child: Divider(color: AppTheme.divider)),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -262,6 +261,8 @@ class _LoginPageState extends State<LoginPage> {
                     _thirdPartyButton(Icons.wechat, '微信'),
                     const SizedBox(width: 24),
                     _thirdPartyButton(Icons.apple, 'Apple ID'),
+                    const SizedBox(width: 24),
+                    _thirdPartyButton(Icons.bolt, '内测体验'),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -269,16 +270,16 @@ class _LoginPageState extends State<LoginPage> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0x26FFB300),
+                    color: const Color(0x26F0B90B),
                     borderRadius: BorderRadius.circular(AppTheme.tagRadius),
                     border: Border.all(
                         color: AppTheme.warning.withValues(alpha: 0.3)),
                   ),
-                  child: Row(
+                  child: const Row(
                     children: [
                       Icon(Icons.warning_amber_rounded,
                           color: AppTheme.warning, size: 20),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       Expanded(
                         child: Text('AI 辅助决策,自主承担风险。历史回测不代表未来收益。',
                             style: TextStyle(
@@ -295,13 +296,17 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  // TODO: 接入微信/Apple 登录 SDK
+  // 第三方登录:微信/Apple 待接 SDK;内测体验一键登录测试账号
   Widget _thirdPartyButton(IconData icon, String label) {
     return InkWell(
       onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$label 登录即将上线')),
-        );
+        if (label == '内测体验') {
+          _quickLogin();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$label 登录即将上线')),
+          );
+        }
       },
       borderRadius: BorderRadius.circular(24),
       child: Container(
@@ -314,6 +319,42 @@ class _LoginPageState extends State<LoginPage> {
         child: Icon(icon, color: AppTheme.textSecondary, size: 26),
       ),
     );
+  }
+
+  /// 内测体验:一键登录预设测试账号
+  /// 测试账号通过编译注入: --dart-define=TEST_PHONE=xxx --dart-define=TEST_PWD=xxx
+  /// 未注入时按钮点击无效,防止生产环境泄露
+  static const String _testPhone = String.fromEnvironment('TEST_PHONE', defaultValue: '');
+  static const String _testPwd = String.fromEnvironment('TEST_PWD', defaultValue: '');
+
+  Future<void> _quickLogin() async {
+    if (_testPhone.isEmpty || _testPwd.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('内测账号未配置,请联系管理员')),
+      );
+      return;
+    }
+    setState(() => _loading = true);
+    final auth = context.read<AuthProvider>();
+    auth.clearError();
+    LoginResult result = await auth.login(_testPhone, _testPwd);
+    // 风控二次验证:自动获取验证码并完成
+    if (result == LoginResult.needSecondVerify) {
+      final code = await auth.sendVerifyCode(_testPhone);
+      if (code != null && mounted) {
+        result = await auth.verifySecondLogin(code, trustDevice: true);
+      }
+    }
+    if (!mounted) return;
+    setState(() => _loading = false);
+    switch (result) {
+      case LoginResult.success:
+        context.go(auth.landingRoute);
+      case LoginResult.needSecondVerify:
+        context.push('/verify-code');
+      case LoginResult.failed:
+        break;
+    }
   }
 
   Future<void> _goRegister() async {
@@ -363,6 +404,146 @@ class _LoginPageState extends State<LoginPage> {
       case LoginResult.failed:
         break; // 错误信息由 provider.errorMessage 展示
     }
+  }
+
+  /// 重置密码对话框(手机号 + 短信验证码 + 新密码)
+  Future<void> _showResetPasswordDialog() async {
+    final phoneCtrl = TextEditingController(text: _phoneCtrl.text);
+    final codeCtrl = TextEditingController();
+    final pwdCtrl = TextEditingController();
+    int countdown = 0;
+    bool loading = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          void startTimer() {
+            setSt(() => countdown = 60);
+            Future.doWhile(() async {
+              await Future.delayed(const Duration(seconds: 1));
+              if (!ctx.mounted) return false;
+              setSt(() => countdown--);
+              return countdown > 0;
+            });
+          }
+
+          Future<void> sendCode() async {
+            if (phoneCtrl.text.length != 11) return;
+            final captcha = await showDialog<Map<String, String>>(
+              context: ctx,
+              builder: (_) => const _CaptchaDialog(),
+            );
+            if (captcha == null) return;
+            if (!mounted || !ctx.mounted) return;
+            final auth = context.read<AuthProvider>();
+            auth.clearError();
+            final mockCode = await auth.sendVerifyCode(
+              phoneCtrl.text,
+              captchaId: captcha['id'],
+              captchaCode: captcha['code'],
+            );
+            if (mockCode != null && ctx.mounted) {
+              startTimer();
+              await MockCodeDialog.show(ctx, mockCode);
+            }
+          }
+
+          Future<void> submit() async {
+            if (phoneCtrl.text.length != 11 ||
+                codeCtrl.text.length != 6 ||
+                pwdCtrl.text.length < 6) {
+              return;
+            }
+            setSt(() => loading = true);
+            final ok = await context.read<AuthProvider>().resetPassword(
+                  phoneCtrl.text,
+                  codeCtrl.text,
+                  pwdCtrl.text,
+                );
+            if (!ctx.mounted) return;
+            setSt(() => loading = false);
+            if (ok) {
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('密码重置成功,请使用新密码登录')));
+              Navigator.of(ctx).pop();
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('重置密码'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  onChanged: (_) => setSt(() {}),
+                  decoration: const InputDecoration(
+                      labelText: '手机号', prefixText: '+86 '),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: codeCtrl,
+                        keyboardType: TextInputType.number,
+                        maxLength: 6,
+                        decoration: const InputDecoration(
+                            labelText: '验证码', counterText: ''),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 100,
+                      child: OutlinedButton(
+                        onPressed:
+                            (countdown == 0 && phoneCtrl.text.length == 11)
+                                ? sendCode
+                                : null,
+                        child: Text(countdown > 0 ? '${countdown}s' : '获取'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: pwdCtrl,
+                  obscureText: true,
+                  onChanged: (_) => setSt(() {}),
+                  decoration: const InputDecoration(labelText: '新密码(至少6位)'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('取消'),
+              ),
+              ElevatedButton(
+                onPressed: (!loading &&
+                        phoneCtrl.text.length == 11 &&
+                        codeCtrl.text.length == 6 &&
+                        pwdCtrl.text.length >= 6)
+                    ? submit
+                    : null,
+                child: loading
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
+                    : const Text('确认重置'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    phoneCtrl.dispose();
+    codeCtrl.dispose();
+    pwdCtrl.dispose();
   }
 }
 
@@ -433,7 +614,7 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
                           fit: BoxFit.contain,
                           gaplessPlayback: true,
                         )
-                      : Text('加载失败,点击重试',
+                      : const Text('加载失败,点击重试',
                           style: TextStyle(
                               color: AppTheme.textSecondary, fontSize: 12)),
             ),

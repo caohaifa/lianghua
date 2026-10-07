@@ -123,12 +123,16 @@ class _LiveTradingPageState extends State<LiveTradingPage> {
                 const SizedBox(height: 16),
 
                 // 前置条件
-                Text('实盘前置条件', style: AppTheme.headline),
+                const Text('实盘前置条件', style: AppTheme.headline),
                 const SizedBox(height: 8),
                 _PrerequisiteItem(
                   ok: _agreementSigned,
                   title: '协议签署',
                   desc: _agreementSigned ? '已完成' : '未完成,请先完成协议签署',
+                  onAction: _agreementSigned
+                      ? null
+                      : () => context.push('/agreement-sign'),
+                  actionLabel: '去签署',
                 ),
                 _PrerequisiteItem(
                   ok: _hasKey,
@@ -157,10 +161,10 @@ class _LiveTradingPageState extends State<LiveTradingPage> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0x26FFB300),
+                    color: const Color(0x26F0B90B),
                     borderRadius: BorderRadius.circular(AppTheme.tagRadius),
                   ),
-                  child: Text(
+                  child: const Text(
                     '⚠️ 实盘交易存在本金损失风险。AI 信号仅为辅助决策,请自行承担交易结果。',
                     style: TextStyle(color: AppTheme.warning, fontSize: 12),
                   ),

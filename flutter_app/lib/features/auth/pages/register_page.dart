@@ -137,7 +137,7 @@ class _RegisterPageState extends State<RegisterPage> {
                                 fit: BoxFit.contain,
                                 gaplessPlayback: true,
                               )
-                            : Text('点击刷新',
+                            : const Text('点击刷新',
                                 style: TextStyle(
                                     color: AppTheme.textSecondary,
                                     fontSize: 12)),
@@ -175,11 +175,11 @@ class _RegisterPageState extends State<RegisterPage> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                // 邀请码(选填)
+                // 邀请码(内测必填)
                 TextField(
                   controller: _inviteCtrl,
                   decoration: const InputDecoration(
-                    labelText: '邀请码(选填)',
+                    labelText: '邀请码(内测必填)',
                     prefixIcon: Icon(Icons.card_giftcard,
                         color: AppTheme.textSecondary),
                   ),
@@ -224,7 +224,8 @@ class _RegisterPageState extends State<RegisterPage> {
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(auth.errorMessage!,
-                        style: TextStyle(color: AppTheme.bear, fontSize: 13)),
+                        style: const TextStyle(
+                            color: AppTheme.bear, fontSize: 13)),
                   ),
                 const SizedBox(height: 16),
                 // 注册按钮(未勾选协议灰色不可点)

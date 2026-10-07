@@ -70,22 +70,24 @@ class _AgreementSignPageState extends State<AgreementSignPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('2/2 协议签署', style: AppTheme.caption),
+              const Text('2/2 协议签署', style: AppTheme.caption),
               const SizedBox(height: 12),
               if (_readCountdown > 0)
                 Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0x26FFB300),
+                    color: const Color(0x26F0B90B),
                     borderRadius: BorderRadius.circular(AppTheme.tagRadius),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.timer, color: AppTheme.warning, size: 20),
+                      const Icon(Icons.timer,
+                          color: AppTheme.warning, size: 20),
                       const SizedBox(width: 8),
                       Text('请仔细阅读协议,$_readCountdown s 后可签署',
-                        style: TextStyle(color: AppTheme.warning, fontSize: 13)),
+                          style: const TextStyle(
+                              color: AppTheme.warning, fontSize: 13)),
                     ],
                   ),
                 ),
@@ -99,7 +101,8 @@ class _AgreementSignPageState extends State<AgreementSignPage> {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: FinanceCard(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     child: InkWell(
                       onTap: () => _openDoc(i, doc),
                       child: Row(
@@ -123,21 +126,28 @@ class _AgreementSignPageState extends State<AgreementSignPage> {
                                 Text(
                                   doc.title,
                                   style: TextStyle(
-                                    color: doc.required ? AppTheme.warning : AppTheme.textPrimary,
+                                    color: doc.required
+                                        ? AppTheme.warning
+                                        : AppTheme.textPrimary,
                                     fontSize: 15,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
                                 if (doc.required && !read)
-                                  Text('点击阅读全文,读完后方可勾选',
-                                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                                  const Text('点击阅读全文,读完后方可勾选',
+                                      style: TextStyle(
+                                          color: AppTheme.textSecondary,
+                                          fontSize: 11)),
                               ],
                             ),
                           ),
                           if (doc.required)
-                            const Text('🔴 必读', style: TextStyle(color: AppTheme.bear, fontSize: 12)),
+                            const Text('🔴 必读',
+                                style: TextStyle(
+                                    color: AppTheme.bear, fontSize: 12)),
                           const SizedBox(width: 8),
-                          Icon(Icons.chevron_right, color: AppTheme.textSecondary, size: 20),
+                          const Icon(Icons.chevron_right,
+                              color: AppTheme.textSecondary, size: 20),
                         ],
                       ),
                     ),
@@ -152,27 +162,30 @@ class _AgreementSignPageState extends State<AgreementSignPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    const Row(
                       children: [
-                        Icon(Icons.draw, color: AppTheme.brandPrimary, size: 20),
-                        const SizedBox(width: 8),
+                        Icon(Icons.draw,
+                            color: AppTheme.brandPrimary, size: 20),
+                        SizedBox(width: 8),
                         Text('电子签名', style: AppTheme.title),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Text('请在下方区域手写签名', style: AppTheme.caption),
+                    const Text('请在下方区域手写签名', style: AppTheme.caption),
                     const SizedBox(height: 12),
                     Container(
                       key: _signAreaKey,
                       height: 150,
                       decoration: BoxDecoration(
                         color: AppTheme.backgroundTertiary,
-                        borderRadius: BorderRadius.circular(AppTheme.buttonRadius),
+                        borderRadius:
+                            BorderRadius.circular(AppTheme.buttonRadius),
                         border: Border.all(color: AppTheme.divider),
                       ),
                       child: GestureDetector(
                         onPanUpdate: (details) {
-                          setState(() => _signaturePoints.add(details.localPosition));
+                          setState(() =>
+                              _signaturePoints.add(details.localPosition));
                         },
                         onPanEnd: (_) {
                           setState(() => _signaturePoints.add(Offset.infinite));
@@ -187,7 +200,8 @@ class _AgreementSignPageState extends State<AgreementSignPage> {
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton(
-                          onPressed: () => setState(() => _signaturePoints.clear()),
+                          onPressed: () =>
+                              setState(() => _signaturePoints.clear()),
                           child: const Text('清除重签'),
                         ),
                       ),
@@ -199,7 +213,11 @@ class _AgreementSignPageState extends State<AgreementSignPage> {
               ElevatedButton(
                 onPressed: (_canSign && !_loading) ? _sign : null,
                 child: _loading
-                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
                     : const Text('同意并签署'),
               ),
             ],
@@ -220,7 +238,8 @@ class _AgreementSignPageState extends State<AgreementSignPage> {
     final box = _signAreaKey.currentContext?.findRenderObject() as RenderBox?;
     final size = box?.size ?? const Size(600, 150);
     final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, size.width, size.height));
+    final canvas =
+        Canvas(recorder, Rect.fromLTWH(0, 0, size.width, size.height));
     _SignaturePainter(_signaturePoints).paint(canvas, size);
     final image = await recorder
         .endRecording()

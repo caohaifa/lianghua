@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../../../core/network/api_client.dart';
@@ -9,15 +11,30 @@ class MonitorItem {
   final String strategy;
   final String status; // running/paused
   final String signal;
+  final String? params; // 个人策略自定义参数(JSON 对象字符串)
 
   MonitorItem.fromJson(Map<String, dynamic> j)
       : id = j['id'],
         symbol = j['symbol'],
         strategy = j['strategy'],
         status = j['status'],
-        signal = j['signal'] ?? '等待信号';
+        signal = j['signal'] ?? '等待信号',
+        params = j['params']?.toString();
 
   bool get isRunning => status == 'running';
+
+  /// 参数键值对(解析失败/为空返回空 Map)
+  Map<String, String> get paramsMap {
+    final raw = params;
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final m = jsonDecode(raw);
+      if (m is Map) {
+        return m.map((k, v) => MapEntry(k.toString(), v.toString()));
+      }
+    } catch (_) {}
+    return const {};
+  }
 }
 
 /// Python AI Agent 运行状态(/agents/status)
@@ -34,11 +51,12 @@ class AgentStatus {
 }
 
 class MonitorProvider extends ChangeNotifier {
-  /// 可选策略(与后端白名单一致)
-  static const strategies = ['趋势追踪', '网格区间', '多因子轮动', '日内T+0'];
+  /// 可选策略(与后端白名单一致;个人策略=人工信号台)
+  static const strategies = ['趋势追踪', '网格区间', '多因子轮动', '日内T+0', '个人策略'];
 
   List<MonitorItem> monitors = [];
   List<AgentStatus> agents = [];
+  MonitorItem? detail; // 单个监控详情(信号台策略参数用)
   bool loading = false;
   String? error;
 
@@ -111,5 +129,31 @@ class MonitorProvider extends ChangeNotifier {
       await _dio.delete('/monitors/${m.id}');
       await load();
     } catch (_) {}
+  }
+
+  /// 拉取监控详情(信号台策略参数用)
+  Future<void> fetchDetail(int id) async {
+    try {
+      final res = await _dio.get('/monitors/$id');
+      detail =
+          MonitorItem.fromJson(Map<String, dynamic>.from(res.data['data']));
+      notifyListeners();
+    } catch (_) {
+      // 拉取失败保持旧数据
+    }
+  }
+
+  /// 保存个人策略自定义参数(键值对);成功返回 null
+  Future<String?> updateParams(int id, Map<String, String> params) async {
+    try {
+      final res =
+          await _dio.put('/monitors/$id/params', data: {'params': params});
+      detail =
+          MonitorItem.fromJson(Map<String, dynamic>.from(res.data['data']));
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return _errMsg(e);
+    }
   }
 }

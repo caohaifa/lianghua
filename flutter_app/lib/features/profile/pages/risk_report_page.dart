@@ -64,10 +64,14 @@ class _RiskReportPageState extends State<RiskReportPage> {
                         padding: const EdgeInsets.all(24),
                         child: Column(
                           children: [
-                            Text(level, style: const TextStyle(
-                              color: AppTheme.brandPrimary, fontSize: 40, fontWeight: FontWeight.w700)),
+                            Text(level,
+                                style: const TextStyle(
+                                    color: AppTheme.brandPrimary,
+                                    fontSize: 40,
+                                    fontWeight: FontWeight.w700)),
                             const SizedBox(height: 8),
-                            Text(_levelDesc[level] ?? '尚未完成风险测评', style: AppTheme.body),
+                            Text(_levelDesc[level] ?? '尚未完成风险测评',
+                                style: AppTheme.body),
                           ],
                         ),
                       ),
@@ -82,9 +86,11 @@ class _RiskReportPageState extends State<RiskReportPage> {
                               const SizedBox(height: 12),
                               for (final e in _status!.entries)
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 6),
                                   child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(e.key, style: AppTheme.caption),
                                       Text('${e.value}', style: AppTheme.body),
@@ -99,12 +105,14 @@ class _RiskReportPageState extends State<RiskReportPage> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: const Color(0x26FFB300),
-                          borderRadius: BorderRadius.circular(AppTheme.tagRadius),
+                          color: const Color(0x26F0B90B),
+                          borderRadius:
+                              BorderRadius.circular(AppTheme.tagRadius),
                         ),
                         child: const Text(
                           '风险等级决定可参与的策略范围,测评结果有效期 1 年。',
-                          style: TextStyle(color: AppTheme.warning, fontSize: 12),
+                          style:
+                              TextStyle(color: AppTheme.warning, fontSize: 12),
                         ),
                       ),
                     ],

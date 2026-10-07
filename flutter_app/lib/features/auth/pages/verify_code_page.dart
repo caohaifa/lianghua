@@ -30,8 +30,12 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
 
   @override
   void dispose() {
-    for (final c in _ctrls) c.dispose();
-    for (final f in _focusNodes) f.dispose();
+    for (final c in _ctrls) {
+      c.dispose();
+    }
+    for (final f in _focusNodes) {
+      f.dispose();
+    }
     super.dispose();
   }
 
@@ -47,8 +51,9 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
 
   String get _maskedPhone {
     final phone = context.read<AuthProvider>().pendingPhone ?? '';
-    if (phone.length == 11)
+    if (phone.length == 11) {
       return '+86 ${phone.substring(0, 3)}****${phone.substring(7)}';
+    }
     return phone;
   }
 
@@ -70,16 +75,16 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0x26FFB300),
+                  color: const Color(0x26F0B90B),
                   borderRadius: BorderRadius.circular(AppTheme.tagRadius),
                   border: Border.all(
                       color: AppTheme.warning.withValues(alpha: 0.3)),
                 ),
-                child: Row(
+                child: const Row(
                   children: [
                     Icon(Icons.warning_amber_rounded,
                         color: AppTheme.warning, size: 20),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     Expanded(
                       child: Text('检测到您正在新设备/异地登录',
                           style:
@@ -148,7 +153,7 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
                     value: _trustDevice,
                     onChanged: (v) => setState(() => _trustDevice = v!),
                   ),
-                  Expanded(
+                  const Expanded(
                       child: Text('我本人操作,信任此设备(7 天内免验证)',
                           style: AppTheme.caption)),
                 ],
@@ -157,7 +162,8 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(auth.errorMessage!,
-                      style: TextStyle(color: AppTheme.bear, fontSize: 13)),
+                      style:
+                          const TextStyle(color: AppTheme.bear, fontSize: 13)),
                 ),
               const SizedBox(height: 24),
               ElevatedButton(
@@ -176,7 +182,7 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
                   onPressed: _countdown == 0 ? _resend : null,
                   child: Text(
                     _countdown > 0 ? '重新发送(${_countdown}s)' : '重新发送',
-                    style: TextStyle(color: AppTheme.textSecondary),
+                    style: const TextStyle(color: AppTheme.textSecondary),
                   ),
                 ),
               ),
@@ -229,7 +235,9 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
     } else if (result == LoginResult.failed) {
       // 失败震动提示
       HapticFeedback.vibrate();
-      for (final c in _ctrls) c.clear();
+      for (final c in _ctrls) {
+        c.clear();
+      }
       _focusNodes[0].requestFocus();
     }
   }
