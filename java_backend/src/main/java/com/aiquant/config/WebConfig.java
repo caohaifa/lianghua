@@ -2,6 +2,7 @@ package com.aiquant.config;
 
 import com.aiquant.interceptor.AdminInterceptor;
 import com.aiquant.interceptor.JwtInterceptor;
+import com.aiquant.interceptor.RateLimitInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -12,6 +13,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebConfig implements WebMvcConfigurer {
 
     @Autowired
+    private RateLimitInterceptor rateLimitInterceptor;
+    @Autowired
     private JwtInterceptor jwtInterceptor;
     @Autowired
     private AdminInterceptor adminInterceptor;
@@ -21,16 +24,22 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // 敏感接口限流(最先执行,保护登录/短信/注册等入口接口)
+        registry.addInterceptor(rateLimitInterceptor)
+                .addPathPatterns("/**");
         // 普通用户接口
         registry.addInterceptor(jwtInterceptor)
                 .addPathPatterns("/**")
                 .excludePathPatterns(
+                        "/auth/health",
                         "/auth/login",
                         "/auth/register",
                         "/auth/sms/send",
                         "/auth/refresh",
                         "/auth/captcha",
+                        "/auth/password/reset",
                         "/admin/**",
+                        "/actuator/**",
                         "/error"
                 );
         // 运营后台接口(独立鉴权,要求管理员 Token)

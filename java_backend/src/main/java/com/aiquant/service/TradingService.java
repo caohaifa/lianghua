@@ -6,6 +6,7 @@ import com.aiquant.service.exchange.BinanceExchangeChannel;
 import com.aiquant.service.exchange.ExchangeChannel;
 import com.aiquant.service.exchange.SimulatedExchangeChannel;
 import com.aiquant.util.AesUtil;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,8 @@ public class TradingService {
     @Autowired private SimulatedExchangeChannel simulatedChannel;
     @Autowired private BinanceExchangeChannel binanceChannel;
     @Autowired private AesUtil aesUtil;
+    @Autowired private MeterRegistry meterRegistry;
+    @Autowired private ReferralService referralService;
 
     // ══════════════════════ 账户 ══════════════════════
 
@@ -88,9 +91,26 @@ public class TradingService {
 
     // ══════════════════════ 下单 ══════════════════════
 
+    /**
+     * 下单入口 + 埋点:aiquant_orders_total{result} 供 Prometheus 计算下单成功率
+     * (attempt=受理尝试, filled/pending=接受, rejected=校验/风控/资金拒绝)
+     */
     @Transactional
     public Order placeOrder(String userId, String symbol, String side, String orderType,
                             Double price, Double amount, String strategyName) {
+        meterRegistry.counter("aiquant_orders_total", "result", "attempt").increment();
+        try {
+            Order order = doPlaceOrder(userId, symbol, side, orderType, price, amount, strategyName);
+            meterRegistry.counter("aiquant_orders_total", "result", order.getStatus()).increment();
+            return order;
+        } catch (RuntimeException e) {
+            meterRegistry.counter("aiquant_orders_total", "result", "rejected").increment();
+            throw e;
+        }
+    }
+
+    private Order doPlaceOrder(String userId, String symbol, String side, String orderType,
+                               Double price, Double amount, String strategyName) {
         // 1. 参数校验
         if (symbol == null || symbol.isBlank()) throw new RuntimeException("标的不能为空");
         if (!"buy".equals(side) && !"sell".equals(side)) throw new RuntimeException("买卖方向不合法");
@@ -179,16 +199,16 @@ public class TradingService {
 
         // 6. 成交后更新资金与持仓
         if (fill.isFilled()) {
-            applyFill(userId, symbol, side, fill.getFillPrice(), fill.getFillAmount(),
-                    open, strategyName, currency, aShare);
+            applyFill(order.getOrderId(), userId, symbol, side, fill.getFillPrice(),
+                    fill.getFillAmount(), open, strategyName, currency, aShare);
         }
         return orderMapper.selectByOrderId(order.getOrderId());
     }
 
-    /** 成交入账:资金 + 持仓加权 + A股 T+1 可卖份额 + 平仓盈亏记风控 */
-    private void applyFill(String userId, String symbol, String side, double fillPrice,
-                           double fillAmount, Position open, String strategyName,
-                           String currency, boolean aShare) {
+    /** 成交入账:资金 + 持仓加权 + A股 T+1 可卖份额 + 平仓盈亏记风控 + 邀请奖励返佣 */
+    private void applyFill(String orderId, String userId, String symbol, String side,
+                           double fillPrice, double fillAmount, Position open,
+                           String strategyName, String currency, boolean aShare) {
         double notional = fillPrice * fillAmount;
         if ("buy".equals(side)) {
             accountMapper.addBalance(userId, currency, -notional);
@@ -204,7 +224,6 @@ public class TradingService {
                 p.setCurrentPrice(fillPrice);
                 p.setStrategyName(strategyName);
                 positionMapper.insert(p);
-                riskEngine.updatePositionCount(userId, 1);
             } else {
                 double newAmount = open.getAmount() + fillAmount;
                 double newEntry = (open.getEntryPrice() * open.getAmount() + notional) / newAmount;
@@ -230,7 +249,6 @@ public class TradingService {
                 open.setPnl(realizedPnl); // 本次已实现
                 open.setPnlPct((fillPrice - open.getEntryPrice()) / open.getEntryPrice() * 100);
                 positionMapper.close(open);
-                riskEngine.updatePositionCount(userId, -1);
             } else {
                 open.setAmount(remain);
                 open.setAvailableAmount(remainAvailable);
@@ -244,6 +262,9 @@ public class TradingService {
                 riskEngine.recordPnl(userId, -realizedPnl / (open.getEntryPrice() * fillAmount));
             }
         }
+
+        // 邀请奖励:被推荐人成交后,推荐人获交易流水 1% 返佣(USDT/CNY 随交易币种)
+        referralService.payReward(userId, orderId, symbol, currency, notional);
     }
 
     // ══════════════════════ 限价单撮合(由 LimitOrderMatcher 定时驱动) ══════════════════════
@@ -293,7 +314,7 @@ public class TradingService {
         order.setFilledAmount(order.getAmount());
         order.setPrice(fillPrice);
         orderMapper.updateFill(order);
-        applyFill(order.getUserId(), order.getSymbol(), order.getSide(),
+        applyFill(order.getOrderId(), order.getUserId(), order.getSymbol(), order.getSide(),
                 fillPrice, order.getAmount(), open, order.getStrategyName(), currency, aShare);
         return true;
     }
@@ -307,11 +328,14 @@ public class TradingService {
         if (orderMapper.cancelPending(orderId) == 0) throw new RuntimeException("订单状态已变化,请刷新");
     }
 
-    public List<Order> listOrders(String userId, int limit) {
+    public List<Order> listOrders(String userId, String symbol, int limit) {
+        if (symbol != null && !symbol.isEmpty()) {
+            return orderMapper.selectByUserAndSymbol(userId, symbol, Math.min(Math.max(limit, 1), 200));
+        }
         return orderMapper.selectByUser(userId, Math.min(Math.max(limit, 1), 200));
     }
 
-    /** 持仓列表(先用最新行情刷新现价/浮动盈亏) */
+    /** 持仓列表(用最新行情计算现价/浮动盈亏,只读不写库;由定时任务统一持久化) */
     public List<Position> refreshPositions(String userId) {
         List<Position> positions = positionMapper.selectOpenByUser(userId);
         for (Position p : positions) {
@@ -322,7 +346,6 @@ public class TradingService {
             p.setCurrentPrice(current);
             p.setPnl(round8(pnl));
             p.setPnlPct(round4((current - p.getEntryPrice()) / p.getEntryPrice() * 100));
-            positionMapper.updateHolding(p);
         }
         return positions;
     }

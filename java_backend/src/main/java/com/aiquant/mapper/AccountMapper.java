@@ -26,4 +26,11 @@ public interface AccountMapper {
     int addBalance(@Param("userId") String userId,
                    @Param("currency") String currency,
                    @Param("delta") double delta);
+
+    /** 原子条件扣款:仅当余额充足才扣,返回 0 表示余额不足(消除提现/买入并发透支) */
+    @Update("UPDATE t_account SET balance = balance - #{amount}, updated_at = NOW() "
+            + "WHERE user_id = #{userId} AND currency = #{currency} AND balance >= #{amount}")
+    int debitIfSufficient(@Param("userId") String userId,
+                          @Param("currency") String currency,
+                          @Param("amount") double amount);
 }

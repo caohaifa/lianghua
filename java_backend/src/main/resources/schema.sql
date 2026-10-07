@@ -130,29 +130,6 @@ CREATE TABLE IF NOT EXISTS t_position (
 -- 计费域 (billing_db)
 -- ═══════════════════════════════════════════════════════════════
 
-CREATE TABLE IF NOT EXISTS t_plan_order (
-    id              BIGINT          NOT NULL AUTO_INCREMENT,
-    user_id         VARCHAR(32)     NOT NULL,
-    plan_level      VARCHAR(20)     NOT NULL                COMMENT '订阅等级',
-    amount          DECIMAL(10,2)   NOT NULL                COMMENT '金额',
-    period          VARCHAR(10)     NOT NULL                COMMENT '周期: month/quarter/year',
-    status          VARCHAR(20)     NOT NULL                COMMENT '状态: pending/paid/expired',
-    created_at      DATETIME        NOT NULL,
-    PRIMARY KEY (id),
-    KEY idx_user_id (user_id)
-) ENGINE=InnoDB COMMENT='订阅订单表';
-
-CREATE TABLE IF NOT EXISTS t_profit_settlement (
-    id              BIGINT          NOT NULL AUTO_INCREMENT,
-    user_id         VARCHAR(32)     NOT NULL,
-    profit_amount   DECIMAL(12,2)   NOT NULL                COMMENT '净盈利金额',
-    share_ratio     DECIMAL(5,2)    NOT NULL                COMMENT '分成比例',
-    share_amount    DECIMAL(12,2)   NOT NULL                COMMENT '分成金额',
-    settled_at      DATETIME        NOT NULL                COMMENT '结算时间',
-    PRIMARY KEY (id),
-    KEY idx_user_id (user_id)
-) ENGINE=InnoDB COMMENT='分成结算表';
-
 -- ═══════════════════════════════════════════════════════════════
 -- 初始化默认数据
 -- ═══════════════════════════════════════════════════════════════
@@ -161,6 +138,16 @@ CREATE TABLE IF NOT EXISTS t_profit_settlement (
 INSERT INTO t_user (user_id, phone, password_hash, nickname, risk_level, agreement_signed, status, created_at, updated_at)
 SELECT 'testuser001', '13800138000', 'e10adc3949ba59abbe56e057f20f883e', '量化测试用户', 'R3', 1, 0, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM t_user WHERE phone = '13800138000');
+
+-- 测试账号 B: 手机号 13800138001, 密码 123456 (多用户场景: 跟单/邀请/团队)
+INSERT INTO t_user (user_id, phone, password_hash, nickname, risk_level, agreement_signed, status, created_at, updated_at)
+SELECT 'testuser002', '13800138001', 'e10adc3949ba59abbe56e057f20f883e', '测试账号B', 'R3', 1, 0, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM t_user WHERE phone = '13800138001');
+
+-- 测试账号 C: 手机号 13800138002, 密码 123456
+INSERT INTO t_user (user_id, phone, password_hash, nickname, risk_level, agreement_signed, status, created_at, updated_at)
+SELECT 'testuser003', '13800138002', 'e10adc3949ba59abbe56e057f20f883e', '测试账号C', 'R3', 1, 0, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM t_user WHERE phone = '13800138002');
 
 -- ═══════════════════════════════════════════════════════════════
 -- 运营后台域 (admin)

@@ -13,7 +13,6 @@ public class DashboardStatsVO {
     private Long dau;
     private Double tradeVolume;
     private Long orderCount;
-    private Double settlementIncome;
     private Long onlineStrategies;
     private Long openPositions;
 }

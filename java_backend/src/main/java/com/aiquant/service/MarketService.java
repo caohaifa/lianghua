@@ -144,9 +144,10 @@ public class MarketService {
         }
     }
 
-    /** A 股:每 10 秒刷新 */
+    /** A 股:每 10 秒刷新(仅在交易时段 9:15-15:05 UTC+8 内执行) */
     @Scheduled(fixedRate = 10_000, initialDelay = 2500)
     public void refreshAShare() {
+        if (!isAShareTradingTime()) return;
         try {
             Map<String, Map<String, Object>> data = realProvider.fetchAShareQuotes();
             data.forEach(this::mergeAShare);
@@ -155,11 +156,24 @@ public class MarketService {
         }
     }
 
+    /**
+     * 判断当前是否为 A 股交易时段(周一至周五 9:15-15:05 UTC+8)
+     * 9:15 提前 15 分钟开始拉取,15:05 延迟 5 分钟停止,覆盖集合竞价和收盘。
+     */
+    private static boolean isAShareTradingTime() {
+        java.time.ZonedDateTime now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
+        java.time.DayOfWeek dow = now.getDayOfWeek();
+        if (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY) return false;
+        int hm = now.getHour() * 100 + now.getMinute();
+        return hm >= 915 && hm <= 1505;
+    }
+
     private void mergeCrypto(String symbol, Map<String, Object> d) {
         Quote old = quoteCache.get(symbol);
         String name = old != null ? old.getName() : symbol;
-        quoteCache.put(symbol, Quote.of(symbol, name,
+        quoteCache.put(symbol, Quote.ofFull(symbol, name,
                 num(d.get("price")), num(d.get("change")), num(d.get("volume")),
+                num(d.get("high")), num(d.get("low")), num(d.get("quoteVol")),
                 "USDT", "crypto", lng(d.get("timestamp"))));
         realSymbols.add(symbol);
     }
@@ -168,23 +182,32 @@ public class MarketService {
         Quote old = quoteCache.get(symbol);
         Object nm = d.get("name");
         String name = nm != null ? nm.toString() : (old != null ? old.getName() : symbol);
-        quoteCache.put(symbol, Quote.of(symbol, name,
+        quoteCache.put(symbol, Quote.ofFull(symbol, name,
                 num(d.get("price")), num(d.get("change")), num(d.get("volume")),
+                num(d.get("high")), num(d.get("low")), num(d.get("quoteVol")),
                 "CNY", "a-share", lng(d.get("timestamp"))));
         realSymbols.add(symbol);
     }
 
     /**
-     * 立即拉取真实行情(手动刷新)
+     * 立即拉取真实行情(手动刷新)。带 3s 去重窗口,避免下拉刷新连点与定时任务叠加打爆上游。
      */
+    private volatile long lastManualRefreshAt = 0L;
+
     public void refreshNow() {
+        long now = System.currentTimeMillis();
+        if (now - lastManualRefreshAt < 3_000) return;
+        lastManualRefreshAt = now;
         refreshCrypto();
         refreshAShare();
     }
 
     // ───────────────────────── 真实 K 线 ─────────────────────────
 
-    private static final Set<String> VALID_PERIOD = Set.of("1m", "5m", "1h", "1d");
+    private static final Set<String> VALID_PERIOD = Set.of(
+            "1m", "3m", "5m", "15m", "30m",
+            "1h", "2h", "4h", "6h", "8h", "12h",
+            "1d", "3d", "1w", "1M");
 
     /**
      * 获取 K 线(OHLCV)。优先真实源并短期缓存;拉取失败时返回上次缓存。
@@ -221,6 +244,63 @@ public class MarketService {
         }
     }
 
+    // ───────────────────────── 盘口 / 成交流水(仅加密) ─────────────────────────
+
+    // 盘口/成交缓存: symbol|limit -> {payload, fetchedAt}
+    private final Map<String, TimedCache> depthCache = new ConcurrentHashMap<>();
+    private final Map<String, TimedCache> tradesCache = new ConcurrentHashMap<>();
+
+    private static final long DEPTH_TTL_MS = 3_000;
+    private static final long TRADES_TTL_MS = 3_000;
+
+    /** 盘口订单簿(仅加密标的)。失败返回上次缓存,无缓存则抛异常。 */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getDepth(String symbol, int limit) {
+        if (quoteCache.get(symbol) == null) return null;
+        if (!RealMarketDataProvider.isCrypto(symbol)) {
+            throw new IllegalArgumentException("仅加密标的支持盘口");
+        }
+        String key = symbol + "|" + limit;
+        TimedCache cached = depthCache.get(key);
+        long now = System.currentTimeMillis();
+        if (cached != null && now - cached.fetchedAt < DEPTH_TTL_MS) {
+            return (Map<String, Object>) cached.payload;
+        }
+        try {
+            Map<String, Object> depth = realProvider.fetchDepth(symbol, limit);
+            depthCache.put(key, new TimedCache(depth, now));
+            return depth;
+        } catch (Exception e) {
+            log.warn("盘口拉取失败 [{}]: {}", symbol, e.getMessage());
+            if (cached != null) return (Map<String, Object>) cached.payload;
+            throw new RuntimeException("盘口暂时不可用,请稍后重试");
+        }
+    }
+
+    /** 最新成交流水(仅加密标的)。失败返回上次缓存,无缓存则抛异常。 */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> getTrades(String symbol, int limit) {
+        if (quoteCache.get(symbol) == null) return null;
+        if (!RealMarketDataProvider.isCrypto(symbol)) {
+            throw new IllegalArgumentException("仅加密标的支持成交流水");
+        }
+        String key = symbol + "|" + limit;
+        TimedCache cached = tradesCache.get(key);
+        long now = System.currentTimeMillis();
+        if (cached != null && now - cached.fetchedAt < TRADES_TTL_MS) {
+            return (List<Map<String, Object>>) cached.payload;
+        }
+        try {
+            List<Map<String, Object>> trades = realProvider.fetchTrades(symbol, limit);
+            tradesCache.put(key, new TimedCache(trades, now));
+            return trades;
+        } catch (Exception e) {
+            log.warn("成交流水拉取失败 [{}]: {}", symbol, e.getMessage());
+            if (cached != null) return (List<Map<String, Object>>) cached.payload;
+            throw new RuntimeException("成交流水暂时不可用,请稍后重试");
+        }
+    }
+
     // ───────────────────────── WebSocket 广播 ─────────────────────────
 
     /**
@@ -238,6 +318,10 @@ public class MarketService {
             tickData.put("symbol", q.getSymbol());
             tickData.put("price", q.getPrice());
             tickData.put("change", q.getChange());
+            tickData.put("volume", q.getVolume());
+            tickData.put("high", q.getHigh());
+            tickData.put("low", q.getLow());
+            tickData.put("quoteVol", q.getQuoteVol());
             tickData.put("timestamp", q.getTimestamp());
             snapshot.put(symbol, tickData);
         }
@@ -263,6 +347,16 @@ public class MarketService {
 
         KlineCache(List<Map<String, Object>> bars, long fetchedAt) {
             this.bars = bars;
+            this.fetchedAt = fetchedAt;
+        }
+    }
+
+    private static final class TimedCache {
+        final Object payload;
+        final long fetchedAt;
+
+        TimedCache(Object payload, long fetchedAt) {
+            this.payload = payload;
             this.fetchedAt = fetchedAt;
         }
     }

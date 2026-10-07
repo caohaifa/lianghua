@@ -44,9 +44,32 @@ redis:
 sms:
   mock-return-code: false
 
-# 生产:禁止模拟支付(必须已接入支付网关+回调验签)
-payment:
-  mock-enabled: false
+# 邀请码:留空=不强制;内测阶段可注入固定码
+invite:
+  code: ${INVITE_CODE:}
+
+# 交易市场白名单:生产默认只放加密(A 股待产品确认后放开)
+trading:
+  allowed-markets: ${TRADING_ALLOWED_MARKETS:crypto}
+
+# 敏感接口限流(固定窗口按 IP)
+rate-limit:
+  enabled: true
+  window-seconds: 60
+  sms-send: 15
+  login: 30
+  register: 15
+  password-reset: 10
+
+# 监控指标(/api/v1/actuator/prometheus,建议仅内网暴露)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 # 生产:正式域名白名单(逗号分隔,必须注入)
 cors:
@@ -74,7 +97,7 @@ risk:
 exchange:
   binance:
     base-url: https://api.binance.com
-    # 实盘开关:testnet 联调通过后才允许 true
+    # 实盘开关:testnet 联调通过后才允许 true;联调期把 base-url 切为 testnet-url
     live-enabled: ${BINANCE_LIVE_ENABLED:false}
     testnet-url: https://testnet.binance.vision
   okx:
@@ -87,3 +110,8 @@ logging:
   level:
     root: warn
     com.aiquant: info
+
+# AI 服务地址(Python FastAPI;生产部署在同机内网时可用默认值)
+ai:
+  service-url: ${AI_SERVICE_URL:http://localhost:8000}
+  auto-trade-enabled: ${AI_AUTO_TRADE_ENABLED:false}

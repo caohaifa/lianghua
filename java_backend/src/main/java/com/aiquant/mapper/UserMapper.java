@@ -8,8 +8,8 @@ import java.util.List;
 @Mapper
 public interface UserMapper {
 
-    @Insert("INSERT INTO t_user (user_id, phone, password_hash, nickname, status, created_at, updated_at) " +
-            "VALUES (#{userId}, #{phone}, #{passwordHash}, #{nickname}, 0, NOW(), NOW())")
+    @Insert("INSERT INTO t_user (user_id, phone, password_hash, nickname, status, invited_by, created_at, updated_at) " +
+            "VALUES (#{userId}, #{phone}, #{passwordHash}, #{nickname}, 0, #{invitedBy}, NOW(), NOW())")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(User user);
 
@@ -80,4 +80,10 @@ public interface UserMapper {
 
     @Update("UPDATE t_user SET risk_level = #{riskLevel}, updated_at = NOW() WHERE user_id = #{userId}")
     int adminUpdateRiskLevel(@Param("userId") String userId, @Param("riskLevel") String riskLevel);
+
+    @Select("SELECT COUNT(*) FROM t_user WHERE status = 0")
+    long countAll();
+
+    @Select("SELECT COUNT(*) FROM t_user WHERE risk_level = #{riskLevel} AND status = 0")
+    long countByRiskLevel(@Param("riskLevel") String riskLevel);
 }

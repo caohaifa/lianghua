@@ -111,12 +111,18 @@ public class RealMarketDataProvider {
             Map.entry("601668", "sh601668"),
             Map.entry("603288", "sh603288"));
 
-    // 内部周期 -> 币安 interval
-    private static final Map<String, String> BINANCE_INTERVAL = Map.of(
-            "1m", "1m", "5m", "5m", "1h", "1h", "1d", "1d");
-    // 内部周期 -> 新浪 scale(分钟;日K用240)
+    // 内部周期 -> 币安 interval(交易所完整时间段)
+    private static final Map<String, String> BINANCE_INTERVAL = Map.ofEntries(
+            Map.entry("1m", "1m"), Map.entry("3m", "3m"), Map.entry("5m", "5m"),
+            Map.entry("15m", "15m"), Map.entry("30m", "30m"),
+            Map.entry("1h", "1h"), Map.entry("2h", "2h"), Map.entry("4h", "4h"),
+            Map.entry("6h", "6h"), Map.entry("8h", "8h"), Map.entry("12h", "12h"),
+            Map.entry("1d", "1d"), Map.entry("3d", "3d"),
+            Map.entry("1w", "1w"), Map.entry("1M", "1M"));
+    // 内部周期 -> 新浪 scale(分钟;日K用240;新浪该接口仅支持分钟与日线)
     private static final Map<String, Integer> SINA_SCALE = Map.of(
-            "1m", 1, "5m", 5, "1h", 60, "1d", 240);
+            "1m", 1, "5m", 5, "15m", 15, "30m", 30,
+            "1h", 60, "1d", 240);
 
     private static final DateTimeFormatter SINA_TS_FULL =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -162,6 +168,9 @@ public class RealMarketDataProvider {
             q.put("price", Double.parseDouble(t.path("lastPrice").asText("0")));
             q.put("change", Double.parseDouble(t.path("priceChangePercent").asText("0")));
             q.put("volume", Double.parseDouble(t.path("volume").asText("0"))); // 基础币成交量
+            q.put("high", Double.parseDouble(t.path("highPrice").asText("0")));   // 24h最高
+            q.put("low", Double.parseDouble(t.path("lowPrice").asText("0")));     // 24h最低
+            q.put("quoteVol", Double.parseDouble(t.path("quoteVolume").asText("0"))); // 成交额(USDT)
             q.put("timestamp", now);
             result.put(internal, q);
         }
@@ -198,6 +207,59 @@ public class RealMarketDataProvider {
         return bars;
     }
 
+    /**
+     * 拉取 crypto 盘口订单簿(仅加密标的支持;币安 depth)
+     * 返回 {bids:[[price,qty]...], asks:[[price,qty]...]}
+     */
+    public Map<String, Object> fetchDepth(String internalSymbol, int limit) throws Exception {
+        String bs = CRYPTO_TO_BINANCE.get(internalSymbol);
+        if (bs == null) throw new IllegalArgumentException("仅加密标的支持盘口: " + internalSymbol);
+        // 币安合法档位: 5/10/20/50/100/500/1000/5000
+        limit = switch (Math.max(1, limit)) {
+            case 1, 2, 3, 4, 5 -> 5;
+            case 6, 7, 8, 9, 10 -> 10;
+            case 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 -> 20;
+            default -> 50;
+        };
+        String url = BINANCE_BASE + "/api/v3/depth?symbol=" + bs + "&limit=" + limit;
+        JsonNode root = readJson(url);
+        Map<String, Object> depth = new LinkedHashMap<>();
+        depth.put("bids", parseBookSide(root.path("bids")));
+        depth.put("asks", parseBookSide(root.path("asks")));
+        return depth;
+    }
+
+    private List<double[]> parseBookSide(JsonNode side) {
+        List<double[]> rows = new ArrayList<>(side.size());
+        for (JsonNode row : side) {
+            rows.add(new double[]{row.get(0).asDouble(0), row.get(1).asDouble(0)});
+        }
+        return rows;
+    }
+
+    /**
+     * 拉取 crypto 最新成交流水(仅加密标的支持;币安 trades)
+     * 返回 [{price, qty, time, isBuyerMaker}] — isBuyerMaker=true 表示主动卖出(显红)
+     */
+    public List<Map<String, Object>> fetchTrades(String internalSymbol, int limit) throws Exception {
+        String bs = CRYPTO_TO_BINANCE.get(internalSymbol);
+        if (bs == null) throw new IllegalArgumentException("仅加密标的支持成交流水: " + internalSymbol);
+        limit = Math.max(1, Math.min(limit, 100));
+        String url = BINANCE_BASE + "/api/v3/trades?symbol=" + bs + "&limit=" + limit;
+        JsonNode rows = readJson(url);
+
+        List<Map<String, Object>> trades = new ArrayList<>(rows.size());
+        for (JsonNode t : rows) {
+            Map<String, Object> tr = new LinkedHashMap<>();
+            tr.put("price", t.path("price").asDouble(0));
+            tr.put("qty", t.path("qty").asDouble(0));
+            tr.put("time", t.path("time").asLong(0));
+            tr.put("isBuyerMaker", t.path("isBuyerMaker").asBoolean(false));
+            trades.add(tr);
+        }
+        return trades;
+    }
+
     // ─────────────────────────── A 股行情 ───────────────────────────
 
     /** 拉取全部所需 A 股实时快照,返回 内部symbol -> Quote字段Map */
@@ -230,6 +292,9 @@ public class RealMarketDataProvider {
             q.put("price", price);
             q.put("change", changePct);
             q.put("volume", volume);
+            q.put("high", parseD(f, 4));      // 24h最高(当日)
+            q.put("low", parseD(f, 5));       // 24h最低(当日)
+            q.put("quoteVol", parseD(f, 9));  // 成交额(元)
             q.put("timestamp", now);
             result.put(toInternalAshare(varName), q);
         }

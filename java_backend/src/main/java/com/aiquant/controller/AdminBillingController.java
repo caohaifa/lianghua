@@ -13,7 +13,7 @@ import java.util.Map;
 import static com.aiquant.controller.AdminUserController.pageResult;
 
 /**
- * 运营后台 · 计费管理(订阅订单 + 分成结算查询)
+ * 运营后台 · 计费管理(钱包流水)
  */
 @RestController
 @RequestMapping("/admin/billing")
@@ -22,26 +22,15 @@ public class AdminBillingController {
     @Autowired
     private AdminQueryMapper queryMapper;
 
-    @GetMapping("/plan-orders")
-    public ApiResponse<Map<String, Object>> planOrders(
+    @GetMapping("/wallet")
+    public ApiResponse<Map<String, Object>> wallet(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String type,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size) {
         int offset = Math.max(page - 1, 0) * size;
         return ApiResponse.success(pageResult(
-                queryMapper.listPlanOrders(keyword, status, offset, size),
-                queryMapper.countPlanOrders(keyword, status), page, size));
-    }
-
-    @GetMapping("/settlements")
-    public ApiResponse<Map<String, Object>> settlements(
-            @RequestParam(required = false) String keyword,
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        int offset = Math.max(page - 1, 0) * size;
-        return ApiResponse.success(pageResult(
-                queryMapper.listSettlements(keyword, offset, size),
-                queryMapper.countSettlements(keyword), page, size));
+                queryMapper.listWalletTransactions(keyword, type, offset, size),
+                queryMapper.countWalletTransactions(keyword, type), page, size));
     }
 }

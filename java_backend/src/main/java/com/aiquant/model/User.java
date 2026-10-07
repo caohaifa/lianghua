@@ -17,6 +17,7 @@ public class User {
     private Boolean agreementSigned;
     private String deviceId;
     private String tradingMode;  // sim=模拟盘 live=实盘
+    private String invitedBy;    // 邀请人 user_id
     private Integer status;  // 0=正常 1=冻结
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

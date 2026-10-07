@@ -20,6 +20,10 @@ public interface PositionMapper {
     @Select("SELECT * FROM t_position WHERE user_id = #{userId} AND status = 0 ORDER BY id DESC")
     List<Position> selectOpenByUser(String userId);
 
+    /** 全部用户的 open 持仓(行情驱动定时刷新用) */
+    @Select("SELECT * FROM t_position WHERE status = 0")
+    List<Position> selectAllOpen();
+
     @Select("SELECT COUNT(*) FROM t_position WHERE user_id = #{userId} AND status = 0")
     int countOpen(String userId);
 
@@ -39,8 +43,7 @@ public interface PositionMapper {
     @Update("UPDATE t_position SET status = 1, current_price = #{currentPrice}, pnl = #{pnl}, pnl_pct = #{pnlPct}, closed_at = NOW() WHERE id = #{id}")
     int close(Position position);
 
-    /** 按用户汇总区间内已平仓仓位的已实现盈亏(月度分成结算数据源) */
-    @Select("SELECT user_id AS userId, SUM(pnl) AS profit FROM t_position " +
-            "WHERE status = 1 AND closed_at >= #{start} AND closed_at < #{end} GROUP BY user_id")
-    List<java.util.Map<String, Object>> sumClosedPnlByUser(@Param("start") String start, @Param("end") String end);
+    /** 已实现盈亏:该用户所有已平持仓(status=1)的 pnl 求和 */
+    @Select("SELECT COALESCE(SUM(pnl), 0) FROM t_position WHERE user_id = #{userId} AND status = 1")
+    double sumClosedPnl(String userId);
 }

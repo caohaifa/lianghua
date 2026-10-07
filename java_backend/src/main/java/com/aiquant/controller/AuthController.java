@@ -16,6 +16,12 @@ import java.util.concurrent.TimeUnit;
 @RequestMapping("/auth")
 public class AuthController {
 
+    /** 健康检查(无需鉴权,用于负载均衡/运维探活) */
+    @GetMapping("/health")
+    public ApiResponse<Map<String, Object>> health() {
+        return ApiResponse.success(Map.of("status", "UP", "time", System.currentTimeMillis()));
+    }
+
     @Autowired
     private AuthService authService;
     @Autowired
@@ -116,6 +122,15 @@ public class AuthController {
     }
 
     /**
+     * 重置密码(短信验证码 + 新密码)
+     */
+    @PostMapping("/password/reset")
+    public ApiResponse<Map<String, String>> resetPassword(@RequestBody Map<String, String> body) {
+        authService.resetPassword(body.get("phone"), body.get("code"), body.get("new_password"));
+        return ApiResponse.success(Map.of("status", "ok"));
+    }
+
+    /**
      * 风险测评(答题 → 输出 R1~R5 等级)
      */
     @PostMapping("/risk/assessment")
@@ -129,7 +144,7 @@ public class AuthController {
     }
 
     /**
-     * 协议签署(手写签名 Base64 + 已勾选协议列表,服务端加时间戳存证)
+     * 协议签署(手写签名 Base64 + 已勾选协议列表,服务端加时间戳/环境/内容哈希存证)
      */
     @PostMapping("/agreement/sign")
     public ApiResponse<Map<String, Object>> signAgreement(@RequestBody Map<String, Object> body,
@@ -138,8 +153,16 @@ public class AuthController {
         String signature = (String) body.get("signature");
         @SuppressWarnings("unchecked")
         List<String> agreements = (List<String>) body.get("agreements");
-        String sealTime = authService.signAgreement(userId, signature, agreements);
+        String sealTime = authService.signAgreement(userId, signature, agreements,
+                request.getRemoteAddr(), request.getHeader("User-Agent"));
         return ApiResponse.success(Map.of("seal_time", sealTime));
+    }
+
+    /** 当前用户专属邀请码(= userId,新用户注册时填入可建立邀请关系) */
+    @GetMapping("/invite-code")
+    public ApiResponse<Map<String, String>> inviteCode(HttpServletRequest request) {
+        String userId = (String) request.getAttribute("userId");
+        return ApiResponse.success(Map.of("invite_code", authService.getUserInviteCode(userId)));
     }
 
     private static String firstNonBlank(String a, String b) {

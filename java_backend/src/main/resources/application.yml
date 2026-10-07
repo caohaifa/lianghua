@@ -49,10 +49,32 @@ sms:
   # 开发态:true=响应回传 mock_code(无真实短信网关);生产必须 false 并接短信网关
   mock-return-code: ${SMS_MOCK_RETURN_CODE:true}
 
-# 支付配置
-payment:
-  # 开发态:true=模拟支付直接置 paid;生产必须 false,由支付网关回调置 paid
-  mock-enabled: ${PAYMENT_MOCK_ENABLED:true}
+# 内测邀请码:配置后注册必填且必须匹配;留空则邀请码选填(dev 默认不强制,内测期注入 INVITE_CODE)
+invite:
+  code: ${INVITE_CODE:}
+
+# 交易市场白名单(逗号分隔):A 股开放范围待产品确认,生产可只放 crypto
+trading:
+  allowed-markets: ${TRADING_ALLOWED_MARKETS:crypto,a-share}
+
+# 敏感接口限流(固定窗口按 IP;短信另有手机号维度 60s 限频,两层叠加)
+rate-limit:
+  enabled: ${RATE_LIMIT_ENABLED:true}
+  window-seconds: 60
+  sms-send: 15
+  login: 30
+  register: 15
+  password-reset: 10
+
+# 监控指标(Actuator: /api/v1/actuator/prometheus,建议生产仅内网暴露)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 # 跨域配置(逗号分隔,生产注入正式域名白名单)
 cors:

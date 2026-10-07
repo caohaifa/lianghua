@@ -14,6 +14,8 @@ public class Monitor {
     private String strategy;
     private String status;   // running/paused
     private String signal;
+    private String source;   // user/bot
+    private String params;   // 个人策略自定义参数(JSON 对象字符串,键值对)
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

@@ -1,6 +1,8 @@
 package com.aiquant.config;
 
 import com.aiquant.ws.MarketWebSocketHandler;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -17,6 +19,9 @@ import org.springframework.web.socket.server.support.HttpSessionHandshakeInterce
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
 
+    @Autowired
+    private MeterRegistry meterRegistry;
+
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(marketWebSocketHandler(), "/ws/market")
@@ -26,6 +31,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Bean
     public MarketWebSocketHandler marketWebSocketHandler() {
-        return new MarketWebSocketHandler();
+        return new MarketWebSocketHandler(meterRegistry);
     }
 }

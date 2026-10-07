@@ -8,13 +8,13 @@ import java.util.List;
 @Mapper
 public interface AnnouncementMapper {
 
-    @Insert("INSERT INTO t_announcement (title, content, status, publisher_id, published_at, created_at, updated_at) " +
-            "VALUES (#{title}, #{content}, #{status}, #{publisherId}, #{publishedAt}, NOW(), NOW())")
+    @Insert("INSERT INTO t_announcement (title, content, status, publisher_id, published_at, category, pinned, created_at, updated_at) " +
+            "VALUES (#{title}, #{content}, #{status}, #{publisherId}, #{publishedAt}, #{category}, #{pinned}, NOW(), NOW())")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(Announcement announcement);
 
     @Update("UPDATE t_announcement SET title=#{title}, content=#{content}, status=#{status}, " +
-            "published_at=#{publishedAt}, updated_at=NOW() WHERE id=#{id}")
+            "published_at=#{publishedAt}, category=#{category}, pinned=#{pinned}, updated_at=NOW() WHERE id=#{id}")
     int update(Announcement announcement);
 
     @Select("SELECT * FROM t_announcement WHERE id = #{id}")
@@ -27,7 +27,7 @@ public interface AnnouncementMapper {
                 <if test="status != null"> AND status = #{status} </if>
                 <if test="title != null and title != ''"> AND title LIKE CONCAT('%', #{title}, '%') </if>
             </where>
-            ORDER BY id DESC
+            ORDER BY pinned DESC, id DESC
             LIMIT #{size} OFFSET #{offset}
             </script>
             """)

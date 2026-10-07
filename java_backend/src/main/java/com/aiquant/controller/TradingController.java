@@ -30,8 +30,9 @@ public class TradingController {
 
     @GetMapping("/orders")
     public ApiResponse<List<Order>> orders(@RequestParam(defaultValue = "50") int limit,
+                                           @RequestParam(required = false) String symbol,
                                            HttpServletRequest request) {
-        return ApiResponse.success(tradingService.listOrders(uid(request), limit));
+        return ApiResponse.success(tradingService.listOrders(uid(request), symbol, limit));
     }
 
     @PostMapping("/orders")

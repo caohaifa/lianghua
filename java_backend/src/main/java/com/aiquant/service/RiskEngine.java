@@ -1,11 +1,17 @@
 package com.aiquant.service;
 
+import com.aiquant.mapper.PositionMapper;
 import lombok.Data;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.util.HashSet;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 风控引擎
@@ -15,9 +21,17 @@ import java.util.concurrent.ConcurrentHashMap;
  *   2. 日亏损 ≥ 3% 触发熔断
  *   3. 最大持仓数 5
  *   4. 检查间隔 10 分钟
+ *
+ * 状态持久化到 Redis(每日凌晨自动重置),避免服务重启丢失风控状态。
  */
 @Service
 public class RiskEngine {
+
+    private static final String DAILY_LOSS_PREFIX = "risk:daily_loss:";
+    private static final String CIRCUIT_PREFIX = "risk:circuit:";
+    private static final String POS_COUNT_PREFIX = "risk:pos_count:";
+    /** Redis 键 TTL 25 小时,确保跨日自动过期 */
+    private static final long RISK_KEY_TTL_HOURS = 25;
 
     @Value("${risk.single-loss-ratio:0.02}")
     private double singleLossRatio;
@@ -28,22 +42,19 @@ public class RiskEngine {
     @Value("${risk.max-positions:5}")
     private int maxPositions;
 
-    // 用户日累计亏损比例缓存: userId -> dailyLossPct
-    private final Map<String, Double> dailyLossCache = new ConcurrentHashMap<>();
+    @Autowired
+    private StringRedisTemplate redisTemplate;
 
-    // 用户当前持仓数: userId -> positionCount
-    private final Map<String, Integer> positionCountCache = new ConcurrentHashMap<>();
-
-    // 用户熔断状态: userId -> circuitBroken
-    private final Map<String, Boolean> circuitBreakerStatus = new ConcurrentHashMap<>();
+    @Autowired
+    private PositionMapper positionMapper;
 
     /**
      * 下单前风控检查
      * @return 通过返回 null,拦截返回原因
      */
     public String checkOrder(OrderRequest order) {
-        // 1. 持仓数检查
-        int currentCount = positionCountCache.getOrDefault(order.getUserId(), 0);
+        // 1. 持仓数检查(从 DB 实时查询,避免缓存不一致)
+        int currentCount = positionMapper.selectOpenByUser(order.getUserId()).size();
         if (order.isNewPosition() && currentCount >= maxPositions) {
             return "持仓数已达上限(" + maxPositions + "),不可新开仓";
         }
@@ -59,14 +70,15 @@ public class RiskEngine {
             }
         }
 
-        // 3. 日熔断检查
-        if (Boolean.TRUE.equals(circuitBreakerStatus.get(order.getUserId()))) {
+        // 3. 日熔断检查(Redis 持久化)
+        String circuitKey = CIRCUIT_PREFIX + order.getUserId();
+        if ("1".equals(redisTemplate.opsForValue().get(circuitKey))) {
             return "今日已触发熔断,策略已暂停";
         }
 
-        double dailyLoss = dailyLossCache.getOrDefault(order.getUserId(), 0.0);
+        double dailyLoss = getDailyLoss(order.getUserId());
         if (dailyLoss >= dailyLossCircuitBreaker) {
-            circuitBreakerStatus.put(order.getUserId(), true);
+            redisTemplate.opsForValue().set(circuitKey, "1", RISK_KEY_TTL_HOURS, TimeUnit.HOURS);
             return "日亏损 " + (dailyLoss * 100) + "% 已触发熔断(" + (dailyLossCircuitBreaker * 100) + "%)";
         }
 
@@ -74,47 +86,68 @@ public class RiskEngine {
     }
 
     /**
-     * 记录盈亏
+     * 记录盈亏(持久化到 Redis)
      */
     public void recordPnl(String userId, double pnlPct) {
-        double current = dailyLossCache.getOrDefault(userId, 0.0);
-        dailyLossCache.put(userId, current + pnlPct);
+        String key = DAILY_LOSS_PREFIX + userId;
+        double current = getDailyLoss(userId);
+        double updated = current + pnlPct;
+        redisTemplate.opsForValue().set(key, String.valueOf(updated), RISK_KEY_TTL_HOURS, TimeUnit.HOURS);
 
         // 触发熔断
-        if (dailyLossCache.get(userId) >= dailyLossCircuitBreaker) {
-            circuitBreakerStatus.put(userId, true);
+        if (updated >= dailyLossCircuitBreaker) {
+            redisTemplate.opsForValue().set(CIRCUIT_PREFIX + userId, "1", RISK_KEY_TTL_HOURS, TimeUnit.HOURS);
             System.out.println("[RISK] 用户 " + userId + " 触发日亏损熔断!");
         }
     }
 
-    /**
-     * 更新持仓数
-     */
-    public void updatePositionCount(String userId, int delta) {
-        int current = positionCountCache.getOrDefault(userId, 0);
-        positionCountCache.put(userId, Math.max(0, current + delta));
+    private double getDailyLoss(String userId) {
+        String val = redisTemplate.opsForValue().get(DAILY_LOSS_PREFIX + userId);
+        if (val == null) return 0.0;
+        try {
+            return Double.parseDouble(val);
+        } catch (NumberFormatException e) {
+            return 0.0;
+        }
     }
 
     /**
-     * 重置日风控(每日收盘调用)
+     * 重置日风控(每日凌晨 0:05 自动调用,Redis 键 25h TTL 也会自动过期)
+     * 同时主动 SCAN 并删除残留键,确保状态干净
      */
+    @Scheduled(cron = "0 5 0 * * ?")
     public void resetDaily() {
-        dailyLossCache.clear();
-        circuitBreakerStatus.clear();
-        System.out.println("[RISK] 日风控已重置");
+        Set<String> keysToDelete = new HashSet<>();
+        scanKeys(DAILY_LOSS_PREFIX + "*", keysToDelete);
+        scanKeys(CIRCUIT_PREFIX + "*", keysToDelete);
+        if (!keysToDelete.isEmpty()) {
+            redisTemplate.delete(keysToDelete);
+        }
+        System.out.println("[RISK] 日风控已重置,清理残留键 " + keysToDelete.size() + " 个");
+    }
+
+    private void scanKeys(String pattern, Set<String> collector) {
+        org.springframework.data.redis.core.Cursor<String> cursor =
+                redisTemplate.scan(org.springframework.data.redis.core.ScanOptions.scanOptions()
+                        .match(pattern).count(100).build());
+        while (cursor.hasNext()) {
+            collector.add(cursor.next());
+        }
+        cursor.close();
     }
 
     /**
      * 查询用户风控状态
      */
     public Map<String, Object> getRiskStatus(String userId) {
+        int posCount = positionMapper.selectOpenByUser(userId).size();
         return Map.of(
-                "daily_loss_pct", dailyLossCache.getOrDefault(userId, 0.0),
-                "position_count", positionCountCache.getOrDefault(userId, 0),
+                "daily_loss_pct", getDailyLoss(userId),
+                "position_count", posCount,
                 "max_positions", maxPositions,
                 "single_loss_ratio", singleLossRatio,
                 "daily_circuit_breaker", dailyLossCircuitBreaker,
-                "circuit_broken", circuitBreakerStatus.getOrDefault(userId, false)
+                "circuit_broken", "1".equals(redisTemplate.opsForValue().get(CIRCUIT_PREFIX + userId))
         );
     }
 

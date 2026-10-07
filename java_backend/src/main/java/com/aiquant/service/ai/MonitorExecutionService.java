@@ -2,11 +2,15 @@ package com.aiquant.service.ai;
 
 import com.aiquant.mapper.MonitorMapper;
 import com.aiquant.mapper.PositionMapper;
+import com.aiquant.mapper.SignalLogMapper;
 import com.aiquant.mapper.UserMapper;
 import com.aiquant.model.Monitor;
+import com.aiquant.model.Order;
 import com.aiquant.model.Position;
 import com.aiquant.model.Quote;
+import com.aiquant.model.SignalLog;
 import com.aiquant.model.User;
+import com.aiquant.service.CopyTradingService;
 import com.aiquant.service.MarketService;
 import com.aiquant.service.TradingService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +46,8 @@ public class MonitorExecutionService {
     @Autowired private PositionMapper positionMapper;
     @Autowired private UserMapper userMapper;
     @Autowired private AiDecisionGateway aiGateway;
+    @Autowired private CopyTradingService copyTradingService;
+    @Autowired private SignalLogMapper signalLogMapper;
 
     private final Map<Long, Long> cooldownUntil = new ConcurrentHashMap<>();
 
@@ -59,6 +65,8 @@ public class MonitorExecutionService {
     }
 
     private void executeOne(Monitor m) {
+        // 个人策略只响应人工信号(信号台),不走 AI 自动执行
+        if ("个人策略".equals(m.getStrategy())) return;
         Quote quote = marketService.getQuote(m.getSymbol());
         if (quote == null) return;
         User user = userMapper.selectByUserId(m.getUserId());
@@ -97,24 +105,33 @@ public class MonitorExecutionService {
         switch (action) {
             case "open_long":
                 if (open != null) {
-                    writeSignal(m, "AI已持多仓,观望");
+                    writeSignal(m, "AI已持多仓,观望", action);
                 } else if (!cooled) {
                     // 冷却期跳过下单
                 } else {
                     double amount = buyAmount(m.getUserId(), quote);
                     if (amount <= 0) {
-                        writeSignal(m, "AI买入信号,余额不足");
+                        writeSignal(m, "AI买入信号,余额不足", action);
                     } else {
-                        tradingService.placeOrder(m.getUserId(), m.getSymbol(), "buy",
+                        // 在下单前获取 leader 可用余额(避免余额被扣减后比例失真)
+                        Double leaderAvail = tradingService.getAccountOverview(
+                                m.getUserId(), quote.getCurrency())
+                                .get("available") != null
+                                ? ((Number) tradingService.getAccountOverview(
+                                        m.getUserId(), quote.getCurrency()).get("available")).doubleValue()
+                                : null;
+                        Order buyOrder = tradingService.placeOrder(m.getUserId(), m.getSymbol(), "buy",
                                 "market", null, amount, "AI:" + m.getStrategy());
+                        // 跟单复制:leader 买入按比例复制给所有 active 跟单者
+                        copyTradingService.replicate(m, "buy", buyOrder, leaderAvail);
                         cooldownUntil.put(m.getId(), now + COOLDOWN_MS);
-                        writeSignal(m, "AI买入@" + fmt(quote.getPrice()));
+                        writeSignal(m, "AI买入@" + fmt(quote.getPrice()), action);
                     }
                 }
                 break;
             case "open_short":
                 if (open == null) {
-                    writeSignal(m, "AI做空信号,无多仓");
+                    writeSignal(m, "AI做空信号,无多仓", action);
                 } else if (!cooled) {
                     // 冷却期跳过
                 } else {
@@ -123,20 +140,32 @@ public class MonitorExecutionService {
                             ? (open.getAvailableAmount() == null ? 0 : open.getAvailableAmount())
                             : open.getAmount();
                     if (sellQty <= 0) {
-                        writeSignal(m, "A股T+1,当日买入次日可卖");
+                        writeSignal(m, "A股T+1,当日买入次日可卖", action);
                     } else {
-                        tradingService.placeOrder(m.getUserId(), m.getSymbol(), "sell",
+                        // 在下单前获取 leader 可用余额
+                        Double leaderAvail = tradingService.getAccountOverview(
+                                m.getUserId(), quote.getCurrency())
+                                .get("available") != null
+                                ? ((Number) tradingService.getAccountOverview(
+                                        m.getUserId(), quote.getCurrency()).get("available")).doubleValue()
+                                : null;
+                        Order sellOrder = tradingService.placeOrder(m.getUserId(), m.getSymbol(), "sell",
                                 "market", null, sellQty, "AI:" + m.getStrategy());
+                        // 跟单复制:leader 平仓时 follower 同步平自己的多仓
+                        copyTradingService.replicate(m, "sell", sellOrder, leaderAvail);
                         cooldownUntil.put(m.getId(), now + COOLDOWN_MS);
-                        writeSignal(m, "AI平仓@" + fmt(quote.getPrice()));
+                        writeSignal(m, "AI平仓@" + fmt(quote.getPrice()), action);
                     }
                 }
                 break;
             case "reject":
-                writeSignal(m, "AI拦截:" + reason);
+                // 任何决策都设置冷却,避免频繁触发
+                cooldownUntil.put(m.getId(), now + COOLDOWN_MS);
+                writeSignal(m, "AI拦截:" + reason, action);
                 break;
             case "wait":
-                writeSignal(m, "AI观望:" + reason);
+                // wait 不设置冷却,允许下轮重新评估
+                writeSignal(m, "AI观望:" + reason, action);
                 break;
             default:
                 break;
@@ -161,11 +190,18 @@ public class MonitorExecutionService {
         return Math.floor(amount * 1e6) / 1e6;
     }
 
-    private void writeSignal(Monitor m, String signal) {
+    private void writeSignal(Monitor m, String signal, String action) {
         if (signal.length() > SIGNAL_LEN) {
             signal = signal.substring(0, SIGNAL_LEN);
         }
         monitorMapper.updateSignal(m.getId(), signal);
+        // 落一条信号历史,供后台绩效时间线(与 monitor.signal 覆盖式不同,历史只追加)
+        SignalLog log = new SignalLog();
+        log.setMonitorId(m.getId());
+        log.setUserId(m.getUserId());
+        log.setAction(action);
+        log.setSignal(signal);
+        signalLogMapper.insert(log);
     }
 
     private String fmt(double price) {

@@ -17,7 +17,18 @@ public class Order {
     private Double price;       // 限价单价格;市价单为成交价
     private Double amount;
     private Double filledAmount;
-    private String status;      // pending/filled/cancelled
+    /**
+     * 订单状态机:
+     *   pending        挂单等待成交(限价单)
+     *   filled         全部成交
+     *   cancelled      已撤销
+     *   rejected       交易所拒单(终态,原因为 fail_reason)
+     *   partial_filled 部分成交(成交部分已入账,剩余由交易所继续撮合/待对账)
+     *   expired        已过期(终态)
+     *   unknown        提交结果未知(交易所超时,待对账,不可自动撤单/重试)
+     */
+    private String status;
+    private String failReason;  // rejected/unknown 时的失败或对账说明
     private String strategyName;
     private String signalId;
     private String channel;     // sim/binance 成交通道

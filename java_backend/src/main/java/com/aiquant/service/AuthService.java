@@ -1,6 +1,8 @@
 package com.aiquant.service;
 
+import com.aiquant.mapper.AgreementSignatureMapper;
 import com.aiquant.mapper.UserMapper;
+import com.aiquant.model.AgreementSignature;
 import com.aiquant.model.User;
 import com.aiquant.util.JwtUtil;
 import com.aiquant.util.PasswordHasher;
@@ -12,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
@@ -23,9 +26,15 @@ public class AuthService {
     @Autowired
     private UserMapper userMapper;
     @Autowired
+    private AgreementSignatureMapper agreementSignatureMapper;
+    @Autowired
     private JwtUtil jwtUtil;
     @Autowired
     private StringRedisTemplate redisTemplate;
+
+    /** 内测邀请码(生产环境必须通过 INVITE_CODE 环境变量注入,留空则不强制邀请码) */
+    @org.springframework.beans.factory.annotation.Value("${invite.code:}")
+    private String inviteCode;
 
     private static final String SMS_CODE_PREFIX = "sms:code:";
     private static final String SMS_CODE_INTERVAL = "sms:interval:";
@@ -71,7 +80,7 @@ public class AuthService {
         if (Boolean.TRUE.equals(redisTemplate.hasKey(intervalKey))) {
             throw new RuntimeException("验证码发送过于频繁,请稍后再试");
         }
-        String code = String.format("%06d", (int) (Math.random() * 1000000));
+        String code = String.format("%06d", new SecureRandom().nextInt(1000000));
         redisTemplate.opsForValue().set(SMS_CODE_PREFIX + phone, code, 5, TimeUnit.MINUTES);
         redisTemplate.opsForValue().set(intervalKey, "1", 60, TimeUnit.SECONDS);
         // TODO: 调用短信网关发送
@@ -97,6 +106,7 @@ public class AuthService {
 
     /**
      * 注册(手机号+验证码+邀请码;密码可选)
+     * 内测模式:配置了 invite.code 时邀请码必填且必须匹配;未配置则邀请码选填。
      */
     public RegisterResult register(String phone, String code, String password, String inviteCode) {
         String savedCode = redisTemplate.opsForValue().get(SMS_CODE_PREFIX + phone);
@@ -106,22 +116,72 @@ public class AuthService {
         if (userMapper.selectByPhone(phone) != null) {
             throw new RuntimeException("该手机号已注册");
         }
+        // 邀请码校验与关系绑定(全局内测码 / 用户专属邀请码)
+        String invitedBy = resolveInvite(inviteCode);
         User user = new User();
         user.setUserId(UUID.randomUUID().toString().replace("-", ""));
         user.setPhone(phone);
-        String effectivePassword = (password == null || password.isBlank())
-                ? UUID.randomUUID().toString().replace("-", "") : password;
+        boolean passwordProvided = password != null && !password.isBlank();
+        String effectivePassword = passwordProvided
+                ? password : UUID.randomUUID().toString().replace("-", "");
         user.setPasswordHash(hashPassword(effectivePassword));
         user.setNickname("量化用户" + phone.substring(phone.length() - 4));
+        user.setInvitedBy(invitedBy);
         userMapper.insert(user);
-        if (inviteCode != null && !inviteCode.isBlank()) {
-            // TODO: 绑定邀请关系(注册时绑定,不可事后修改)
-            System.out.println("[INVITE] " + phone + " 使用邀请码 " + inviteCode);
-        }
 
         String token = jwtUtil.generateToken(user.getUserId(), phone);
         redisTemplate.delete(SMS_CODE_PREFIX + phone);
-        return new RegisterResult(token, user.getUserId(), phone, user.getNickname());
+        // 未设密码时提示用户后续设置
+        String hint = passwordProvided ? null : "未设置登录密码,请登录后在设置中补充密码";
+        return new RegisterResult(token, user.getUserId(), phone, user.getNickname(), hint);
+    }
+
+    /**
+     * 邀请码解析(匹配顺序):
+     *   1) 全局内测码(invite.code 配置)命中 → 返回 null,不建立邀请关系;
+     *   2) 用户专属邀请码(= 邀请人 userId)命中 → 返回邀请人 userId,写入 t_user.invited_by;
+     *   3) 均未命中 → 配置了内测码(强制邀请)时拒绝,未配置时忽略无效码(兼容旧客户端)。
+     */
+    private String resolveInvite(String inviteCode) {
+        boolean globalRequired = this.inviteCode != null && !this.inviteCode.isBlank();
+        boolean provided = inviteCode != null && !inviteCode.isBlank();
+        if (!provided) {
+            if (globalRequired) throw new RuntimeException("内测阶段需填写邀请码");
+            return null;
+        }
+        if (globalRequired && this.inviteCode.equals(inviteCode)) {
+            return null; // 全局内测码,不建立邀请关系
+        }
+        User inviter = userMapper.selectByUserId(inviteCode.trim());
+        if (inviter != null) {
+            return inviter.getUserId(); // 用户专属邀请码 → 绑定邀请关系
+        }
+        if (globalRequired) throw new RuntimeException("邀请码无效");
+        return null;
+    }
+
+    /** 当前用户专属邀请码(= userId,新用户注册时填入即可建立邀请关系) */
+    public String getUserInviteCode(String userId) {
+        return userId;
+    }
+
+    /**
+     * 重置密码(短信验证码 + 新密码)
+     */
+    public void resetPassword(String phone, String code, String newPassword) {
+        String savedCode = redisTemplate.opsForValue().get(SMS_CODE_PREFIX + phone);
+        if (savedCode == null || !savedCode.equals(code)) {
+            throw new RuntimeException("验证码错误或已过期");
+        }
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new RuntimeException("新密码至少 6 位");
+        }
+        User user = userMapper.selectByPhone(phone);
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        userMapper.updatePasswordHash(user.getUserId(), hashPassword(newPassword));
+        redisTemplate.delete(SMS_CODE_PREFIX + phone);
     }
 
     /**
@@ -209,15 +269,38 @@ public class AuthService {
     }
 
     /**
-     * 签署协议(记录签名与协议清单,服务端加时间戳存证)
-     * TODO: 调用 CA 证书时间戳 + 存证 OSS
+     * 签署协议(记录签名、协议清单、签署环境与内容哈希,服务端加时间戳存证)。
+     * content_hash = SHA-256(userId|agreements|signatureImg|sealTime|ip),
+     * 供事后校验存证未被篡改;CA 可信时间戳与 OSS 长期归档待外部服务接入。
      */
-    public String signAgreement(String userId, String signatureBase64, java.util.List<String> agreements) {
+    public String signAgreement(String userId, String signatureBase64, java.util.List<String> agreements,
+                                String ip, String userAgent) {
         userMapper.markAgreementSigned(userId);
         String sealTime = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-        System.out.println("[SIGN] " + userId + " 签署协议 " + agreements +
-                " 签名长度=" + (signatureBase64 != null ? signatureBase64.length() : 0));
+        AgreementSignature sig = new AgreementSignature();
+        sig.setUserId(userId);
+        sig.setAgreements(String.join(",", agreements));
+        sig.setSignatureImg(signatureBase64);
+        sig.setSealTime(sealTime);
+        sig.setIp(ip);
+        sig.setUserAgent(userAgent != null && userAgent.length() > 250
+                ? userAgent.substring(0, 250) : userAgent);
+        sig.setContentHash(sha256(userId + "|" + sig.getAgreements() + "|" + signatureBase64 + "|" + sealTime + "|" + ip));
+        agreementSignatureMapper.insert(sig);
         return sealTime;
+    }
+
+    /** SHA-256 十六进制(存证完整性校验;失败不阻断签署,仅缺校验字段) */
+    private static String sha256(String data) {
+        try {
+            byte[] hash = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(data.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(hash.length * 2);
+            for (byte b : hash) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // ══════════════════════════════════════════════
@@ -236,7 +319,11 @@ public class AuthService {
         return "R5";
     }
 
-    public record RegisterResult(String accessToken, String userId, String phone, String nickname) {}
+    public record RegisterResult(String accessToken, String userId, String phone, String nickname, String passwordHint) {
+        public RegisterResult(String accessToken, String userId, String phone, String nickname) {
+            this(accessToken, userId, phone, nickname, null);
+        }
+    }
     public record TokenPair(String accessToken, String refreshToken) {}
 
     /**
