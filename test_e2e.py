@@ -214,13 +214,62 @@ def main():
                     "agreements": ["user_agreement", "privacy_policy"]}, headers=auth_h)
     report(api_ok(sign) and sign["data"].get("seal_time"), "协议签署", sign.get("data", {}).get("seal_time", ""))
 
+    # 7.1 专属邀请码(= userId,新用户注册时填入可建立邀请关系)
+    _, ic = http("GET", JAVA + "/auth/invite-code", headers=auth_h)
+    report(api_ok(ic) and ic["data"].get("invite_code"), "获取专属邀请码 /auth/invite-code",
+           str(ic.get("data", {}).get("invite_code"))[:8] + "..." if api_ok(ic) else "")
+
+    # 7.2 邀请奖励:被推荐人每笔现货成交,推荐人获交易流水 1% 返佣
+    inviter_code = ic["data"]["invite_code"] if api_ok(ic) else ""
+    if inviter_code:
+        phone_b = "137" + "".join(random.choice("0123456789") for _ in range(8))
+        cid3, ccode3 = fresh_captcha()
+        _, smsb = http("POST", JAVA + "/auth/sms/send",
+                       {"phone": phone_b, "captcha_id": cid3, "captcha_code": ccode3})
+        if api_ok(smsb):
+            _, regb = http("POST", JAVA + "/auth/register",
+                           {"phone": phone_b, "code": smsb["data"]["mock_code"],
+                            "invite_code": inviter_code})
+            okb = api_ok(regb) and regb["data"].get("access_token")
+            report(okb, "好友B注册(携带邀请码,建立邀请关系)",
+                   phone_b if okb else str(regb)[:120])
+        else:
+            okb = False
+            report(False, "好友B发送验证码", str(smsb)[:120])
+        if okb:
+            bh = {"Authorization": "Bearer " + regb["data"]["access_token"]}
+            _, bbuy = http("POST", JAVA + "/trading/orders",
+                           {"symbol": "BTC/USDT", "side": "buy", "order_type": "market",
+                            "amount": 0.001}, headers=bh)
+            report(api_ok(bbuy) and bbuy["data"].get("status") == "filled",
+                   "好友B市价买入 BTC/USDT 0.001",
+                   "" if api_ok(bbuy) else str(bbuy)[:120])
+            _, summ = http("GET", JAVA + "/referral/summary", headers=auth_h)
+            sd = summ.get("data", {}) if api_ok(summ) else {}
+            report(api_ok(summ) and (sd.get("total_reward_usdt") or 0) > 0,
+                   "推荐人邀请奖励到账(流水1%返佣)",
+                   f"usdt={sd.get('total_reward_usdt')} invited={sd.get('invited_count')}"
+                   if api_ok(summ) else str(summ)[:120])
+            report(api_ok(summ) and bool(sd.get("rewards")), "邀请奖励明细列表非空")
+            # 团队管理:团队人数 / 交易总金额 / 成员明细 / 交易流水
+            _, team = http("GET", JAVA + "/referral/team", headers=auth_h)
+            td = team.get("data", {}) if api_ok(team) else {}
+            report(api_ok(team) and (td.get("team_count") or 0) >= 1
+                   and (td.get("total_volume_usdt") or 0) > 0,
+                   "团队管理:团队人数与交易总金额统计",
+                   f"team={td.get('team_count')} active={td.get('active_count')} "
+                   f"vol_usdt={td.get('total_volume_usdt')}" if api_ok(team) else str(team)[:120])
+            report(api_ok(team) and bool(td.get("members")) and bool(td.get("flows")),
+                   "团队管理:成员明细与交易流水列表非空")
+    else:
+        report(False, "邀请奖励用例跳过(未获取到邀请码)")
+
     # 8. 行情(需登录态)
     _, quotes = http("GET", JAVA + "/market/quotes", headers=auth_h)
     ok = api_ok(quotes) and quotes["data"]
     report(ok, "行情列表 /market/quotes",
            f"{len(quotes['data'])} 个标的" if ok else str(quotes)[:120])
-    # 单标的:从列表动态取一个不含 '/' 的符号
-    # 注意:/market/quote/{symbol} 路径变量无法承载 "BTC/USDT" 这类带斜杠符号(404/400),已知限制
+    # 单标的(路径版,仅适用于无 '/' 符号如 A 股代码)
     syms = [q["symbol"] for q in quotes["data"] if "/" not in q.get("symbol", "")] if ok else []
     if syms:
         _, quote = http("GET", JAVA + "/market/quote/" + syms[0], headers=auth_h)
@@ -229,17 +278,42 @@ def main():
     else:
         report(False, "单标的行情", "行情列表为空,无法取测试符号")
 
-    # K线:query 参数传 symbol,支持带斜杠标的(BTC/USDT)
+    # 单标的(query 版):支持带斜杠标的 BTC/USDT(与 /kline 传参一致)
     import urllib.parse
-    ksym = urllib.parse.quote("BTC/USDT", safe="")
+    qsym = urllib.parse.quote("BTC/USDT", safe="")
+    _, quote_q = http("GET", JAVA + f"/market/quote?symbol={qsym}", headers=auth_h)
+    report(api_ok(quote_q) and quote_q["data"].get("price"),
+           "单标的行情 /market/quote?symbol=BTC/USDT(query 版)",
+           f"price={quote_q.get('data', {}).get('price')}" if api_ok(quote_q) else str(quote_q)[:120])
+
+    # K线:query 参数传 symbol,支持带斜杠标的(BTC/USDT)
+    ksym = qsym
     _, kl = http("GET", JAVA + f"/market/kline?symbol={ksym}&period=5m&limit=60", headers=auth_h)
     ok = api_ok(kl) and len(kl.get("data") or []) == 60
     bar = kl["data"][-1] if ok else {}
     report(ok and all(k in bar for k in ("time", "open", "high", "low", "close", "volume")),
            "K线 /market/kline (BTC/USDT 5m×60)",
            f"last_close={bar.get('close')}" if ok else str(kl)[:120])
-    _, bad_kl = http("GET", JAVA + f"/market/kline?symbol={ksym}&period=3m", headers=auth_h)
+    _, bad_kl = http("GET", JAVA + f"/market/kline?symbol={ksym}&period=7m", headers=auth_h)
     report(not api_ok(bad_kl), "负向:非法K线周期被拒", bad_kl.get("message", ""))
+
+    # 盘口(仅加密):bids/asks 各 20 档 [[price, qty]]
+    _, dep = http("GET", JAVA + f"/market/depth?symbol={ksym}&limit=20", headers=auth_h)
+    ok = api_ok(dep) and dep["data"].get("bids") and dep["data"].get("asks")
+    report(ok, "盘口 /market/depth (BTC/USDT 20档)",
+           f"bid0={dep['data']['bids'][0]} ask0={dep['data']['asks'][0]}" if ok else str(dep)[:120])
+    # 成交流水(仅加密):price/qty/time/isBuyerMaker
+    _, trd = http("GET", JAVA + f"/market/trades?symbol={ksym}&limit=30", headers=auth_h)
+    ok = api_ok(trd) and len(trd.get("data") or []) > 0
+    tr0 = trd["data"][0] if ok else {}
+    report(ok and all(k in tr0 for k in ("price", "qty", "time", "isBuyerMaker")),
+           "成交流水 /market/trades (BTC/USDT ×30)",
+           f"first_price={tr0.get('price')}" if ok else str(trd)[:120])
+    # 负向:A股不支持盘口/成交
+    _, bad_dep = http("GET", JAVA + "/market/depth?symbol=600519", headers=auth_h)
+    report(bad_dep.get("code") == 400, "负向:A股盘口返回 400", bad_dep.get("message", ""))
+    _, bad_trd = http("GET", JAVA + "/market/trades?symbol=600519", headers=auth_h)
+    report(bad_trd.get("code") == 400, "负向:A股成交流水返回 400", bad_trd.get("message", ""))
 
     print("=" * 60)
     print("E. 交易模块 (/trading)")
@@ -250,8 +324,8 @@ def main():
            f"total_asset={acc.get('data', {}).get('total_asset')}" if api_ok(acc) else str(acc)[:120])
 
     # 流动性自愈:连续多轮 e2e 会累积 BTC 持仓锁占可用余额,
-    # 低于 4000 时先卖出大部分 BTC(保留 0.05),保证后续下单用例稳定
-    if api_ok(acc) and acc["data"].get("available", 0) < 4000:
+    # 低于 12000(需覆盖 0.1 BTC 市价买入,真实价约 8.6 万 USDT/BTC)时先卖出大部分 BTC(保留 0.05)
+    if api_ok(acc) and acc["data"].get("available", 0) < 12000:
         _, oldpos = http("GET", JAVA + "/trading/positions", headers=auth_h)
         for p in (oldpos.get("data") or []):
             if p["symbol"] == "BTC/USDT" and p["amount"] > 0.06:
@@ -289,10 +363,11 @@ def main():
         _, cancel = http("DELETE", JAVA + "/trading/orders/" + pending_oid, headers=auth_h)
         report(api_ok(cancel) and cancel["data"].get("status") == "cancelled", "撤销挂单")
 
+    # 负向:卖出超过持仓量被拒(用超大数量,不依赖测试库中是否恰好无持仓)
     _, bad_sell = http("POST", JAVA + "/trading/orders",
-                       {"symbol": "SOL/USDT", "side": "sell", "order_type": "market", "amount": 1},
+                       {"symbol": "SOL/USDT", "side": "sell", "order_type": "market", "amount": 999999},
                        headers=auth_h)
-    report(not api_ok(bad_sell), "负向:无持仓卖出被拒", bad_sell.get("message", "")[:60])
+    report(not api_ok(bad_sell), "负向:超持仓卖出被拒", bad_sell.get("message", "")[:60])
     _, bad_amt = http("POST", JAVA + "/trading/orders",
                       {"symbol": "BTC/USDT", "side": "buy", "order_type": "market", "amount": -1},
                       headers=auth_h)
@@ -318,11 +393,15 @@ def main():
     report(not api_ok(bad_lot) and "手" in bad_lot.get("message", ""),
            "负向:A股非整手(150股)被拒", bad_lot.get("message", "")[:60])
 
+    # T+1 校验:买入后尝试卖出全部持仓(含当日冻结的100股,跨轮次旧仓也不影响)
+    _, apos_now = http("GET", JAVA + "/trading/positions", headers=auth_h)
+    asym_pos = next((p for p in (apos_now.get("data") or []) if p["symbol"] == ASYM), None)
+    sell_all = asym_pos["amount"] if asym_pos else 100
     _, t1 = http("POST", JAVA + "/trading/orders",
-                 {"symbol": ASYM, "side": "sell", "order_type": "market", "amount": 100},
+                 {"symbol": ASYM, "side": "sell", "order_type": "market", "amount": sell_all},
                  headers=auth_h)
     report(not api_ok(t1) and "T+1" in t1.get("message", ""),
-           "负向:A股当日买入当日卖出(T+1)被拒", t1.get("message", "")[:60])
+           "负向:A股当日买入份额卖出(T+1)被拒", t1.get("message", "")[:60])
 
     _, cny_short = http("POST", JAVA + "/trading/orders",
                         {"symbol": ASYM, "side": "buy", "order_type": "market", "amount": 100000},
@@ -355,7 +434,7 @@ def main():
     print("=" * 60)
     print("G. 监控 (/monitors)")
     print("=" * 60)
-    # 清理 testuser001 历史残留监控(避免套餐上限拦截后续创建)
+    # 清理 testuser001 历史残留监控
     _, old_mons = http("GET", JAVA + "/monitors", headers=auth_h)
     for om in (old_mons.get("data") or []):
         http("DELETE", JAVA + f"/monitors/{om['id']}", headers=auth_h)
@@ -376,18 +455,6 @@ def main():
                       {"symbol": "ETH/USDT", "strategy": "不存在的策略"}, headers=auth_h)
     report(not api_ok(bad_mon), "负向:非法策略创建监控被拒")
 
-    # 套餐权益:新注册用户(免费版,上限1个)——第1个成功,第2个被拦截,随后删除
-    _, rm1 = http("POST", JAVA + "/monitors",
-                  {"symbol": "SOL/USDT", "strategy": "趋势追踪"}, headers=reg_auth_h)
-    report(api_ok(rm1), "免费用户创建第1个监控(权益内)")
-    rm1_id = rm1.get("data", {}).get("id")
-    _, rm2 = http("POST", JAVA + "/monitors",
-                  {"symbol": "ETH/USDT", "strategy": "网格区间"}, headers=reg_auth_h)
-    report(not api_ok(rm2) and "上限" in rm2.get("message", ""),
-           "负向:免费用户超监控上限被拒", rm2.get("message", "")[:60])
-    if rm1_id:
-        http("DELETE", JAVA + f"/monitors/{rm1_id}", headers=reg_auth_h)
-
     agt_st, agt_resp = http("GET", JAVA + "/monitors/agents-status", headers=auth_h)
     agt_list = agt_resp.get("data", {}).get("agents")
     report(agt_st == 200 and isinstance(agt_list, list) and len(agt_list) == 4,
@@ -395,22 +462,10 @@ def main():
            ", ".join(a.get("name", "?") for a in (agt_list or [])))
 
     print("=" * 60)
-    print("H. 订阅/分成/公告 (/subscription, /billing, /announcements)")
+    print("H. 公告 (/announcements)")
     print("=" * 60)
-    _, sub = http("POST", JAVA + "/subscription/subscribe",
-                  {"plan_level": "pro", "period": "month"}, headers=auth_h)
-    report(api_ok(sub) and sub["data"].get("status") == "paid", "订阅专业版(月付 ¥299)")
-    _, stt = http("GET", JAVA + "/subscription/status", headers=auth_h)
-    report(api_ok(stt) and stt["data"].get("active") is True, "订阅状态生效中")
-    report(api_ok(stt) and stt["data"].get("expire_at"),
-           "订阅返回到期时间 expire_at", stt.get("data", {}).get("expire_at", ""))
-    _, setl = http("GET", JAVA + "/billing/settlements", headers=auth_h)
-    report(api_ok(setl) and isinstance(setl["data"], list), "分成结算记录 /billing/settlements")
     _, ann = http("GET", JAVA + "/announcements", headers=auth_h)
     report(api_ok(ann) and isinstance(ann["data"], list), "用户端公告 /announcements")
-    _, bad_sub = http("POST", JAVA + "/subscription/subscribe",
-                      {"plan_level": "vip", "period": "month"}, headers=auth_h)
-    report(not api_ok(bad_sub), "负向:非法套餐订阅被拒")
 
     print("=" * 60)
     print("C. Python AI 服务 (:8000)")
@@ -494,6 +549,584 @@ def main():
             http("POST", JAVA + "/trading/orders",
                  {"symbol": "SOL/USDT", "side": "sell", "order_type": "market",
                   "amount": p["amount"]}, headers=reg_auth_h)
+
+    print("=" * 60)
+    print("J. 合约交易 + 聚合接口 (/futures, /market/overview, /market/meta, /ai/summary)")
+    print("=" * 60)
+
+    def faccount():
+        _, a = http("GET", JAVA + "/futures/account", headers=auth_h)
+        return a.get("data") if api_ok(a) else None
+
+    def fpositions():
+        _, ps = http("GET", JAVA + "/futures/positions", headers=auth_h)
+        return ps.get("data") if api_ok(ps) else None
+
+    # 0. 清理历史残留持仓(跨轮次 e2e),再取账户快照
+    for p in (fpositions() or []):
+        http("POST", JAVA + "/futures/close",
+             {"position_id": p["id"], "amount": p["amount"]}, headers=auth_h)
+    time.sleep(1)
+
+    st, noauth3 = http("GET", JAVA + "/futures/account")
+    report(st in (401, 403), "负向:无 Token 访问合约账户被拒", str(st))
+
+    a0 = faccount()
+    ok = a0 is not None and all(
+        k in a0 for k in ("wallet_balance", "available", "used_margin",
+                          "unrealized_pnl", "total_equity", "margin_ratio"))
+    report(ok, "合约账户懒初始化/视图字段完整",
+           f"wallet={a0.get('wallet_balance') if a0 else '--'}")
+    w0 = a0["wallet_balance"] if a0 else 0
+
+    # 1. 划转 in 2000
+    _, tr_in = http("POST", JAVA + "/futures/transfer",
+                    {"direction": "in", "amount": 2000}, headers=auth_h)
+    a1 = faccount()
+    report(api_ok(tr_in) and a1 is not None and abs(a1["wallet_balance"] - (w0 + 2000)) < 1e-6,
+           "现货→合约划转 2000 USDT",
+           "" if api_ok(tr_in) else str(tr_in)[:120])
+
+    # 2. 负向:A 股标的不能开合约
+    _, bad_fsym = http("POST", JAVA + "/futures/order",
+                       {"symbol": "600519", "direction": "long",
+                        "leverage": 10, "amount": 100}, headers=auth_h)
+    report(not api_ok(bad_fsym) and "加密" in bad_fsym.get("message", ""),
+           "负向:A股标的开合约被拒", bad_fsym.get("message", "")[:60])
+
+    # 3. 开多 20x 0.01 BTC
+    _, op = http("POST", JAVA + "/futures/order",
+                 {"symbol": "BTC/USDT", "direction": "long",
+                  "leverage": 20, "amount": 0.01}, headers=auth_h)
+    time.sleep(1)
+    a2 = faccount()
+    plist = fpositions() or []
+    pcur = next((p for p in plist if p["symbol"] == "BTC/USDT"), None)
+    expect_margin = (pcur["mark_price"] * 0.01 / 20) if pcur else 0
+    report(api_ok(op) and op["data"].get("action") == "open"
+           and pcur is not None and pcur["direction"] == "long"
+           and a2 is not None and abs(a2["used_margin"] - expect_margin) < 1.0
+           and abs(pcur["amount"] - 0.01) < 1e-6,
+           "开多 20x 0.01 BTC(占用保证金≈名义/杠杆)",
+           f"margin={pcur['margin'] if pcur else '--'}")
+
+    # 4. 负向:反向开空被拒(单向持仓)
+    _, rev = http("POST", JAVA + "/futures/order",
+                  {"symbol": "BTC/USDT", "direction": "short",
+                   "leverage": 20, "amount": 0.01}, headers=auth_h)
+    report(not api_ok(rev) and "反向" in rev.get("message", ""),
+           "负向:持仓中反向开仓被拒", rev.get("message", "")[:60])
+
+    # 5. 同向加仓 0.005 → 合计 0.015
+    _, add = http("POST", JAVA + "/futures/order",
+                  {"symbol": "BTC/USDT", "direction": "long",
+                   "leverage": 20, "amount": 0.005}, headers=auth_h)
+    time.sleep(1)
+    pcur = next((p for p in (fpositions() or []) if p["symbol"] == "BTC/USDT"), None)
+    report(api_ok(add) and pcur is not None and abs(pcur["amount"] - 0.015) < 1e-6
+           and pcur["entry_price"] > 0,
+           "同向加仓 0.005(加权开仓价)",
+           f"amount={pcur['amount'] if pcur else '--'}")
+
+    # 6. 负向:占用保证金不可划(超额 out)
+    _, bad_out = http("POST", JAVA + "/futures/transfer",
+                      {"direction": "out", "amount": 99999999}, headers=auth_h)
+    report(not api_ok(bad_out) and "保证金" in bad_out.get("message", ""),
+           "负向:超额划转(占用保证金不可划)被拒", bad_out.get("message", "")[:60])
+
+    # 7. 部分平仓 0.005
+    _, pc = http("POST", JAVA + "/futures/close",
+                 {"position_id": pcur["id"], "amount": 0.005}, headers=auth_h)
+    time.sleep(1)
+    pcur = next((p for p in (fpositions() or []) if p["symbol"] == "BTC/USDT"), None)
+    report(api_ok(pc) and pcur is not None and abs(pcur["amount"] - 0.01) < 1e-6,
+           "部分平仓 0.005(持仓剩 0.01)")
+
+    # 8. 强平价方向正确(多仓:0 < liq < entry)
+    liq_ok = pcur is not None and 0 < pcur["liquidation_price"] < pcur["entry_price"]
+    report(liq_ok, "多仓预估强平价低于开仓价",
+           f"entry={pcur['entry_price'] if pcur else '--'} liq={pcur['liquidation_price'] if pcur else '--'}")
+
+    # 9. 全部平仓
+    _, fc = http("POST", JAVA + "/futures/close", {"position_id": pcur["id"]}, headers=auth_h)
+    time.sleep(1)
+    gone = not any(p["symbol"] == "BTC/USDT" for p in (fpositions() or []))
+    a3 = faccount()
+    report(api_ok(fc) and gone and a3 is not None and abs(a3["used_margin"]) < 1e-6,
+           "市价全平(保证金释放,盈亏已入钱包)")
+
+    # 10. 合约成交记录
+    _, forders = http("GET", JAVA + "/futures/orders?limit=50", headers=auth_h)
+    flist = forders.get("data") if api_ok(forders) else None
+    report(isinstance(flist, list) and any(o.get("action") == "open" for o in (flist or []))
+           and any(o.get("action") == "close" for o in (flist or [])),
+           "合约成交记录含开/平仓")
+
+    # 11. 划回余量(保留极少量灰尘,避免脏占资金)
+    avail = a3["available"]
+    if avail > 1:
+        back = int(avail * 100) / 100 - 0.02
+        if back > 0:
+            http("POST", JAVA + "/futures/transfer",
+                 {"direction": "out", "amount": back}, headers=auth_h)
+
+    # 12. 行情总览
+    _, ov = http("GET", JAVA + "/market/overview", headers=auth_h)
+    d = ov.get("data") if api_ok(ov) else None
+    ok = d is not None and d.get("total_market_cap", 0) > 1e9 \
+        and d.get("total_24h_volume", 0) > 0 \
+        and 0 < d.get("btc_dominance", -1) < 100 \
+        and d.get("active_cryptos", 0) > 0
+    report(ok, "行情总览 /market/overview(市值/24h量/BTC占比)",
+           f"mcap={d.get('total_market_cap') if d else '--'}")
+
+    # 13. 币种元数据
+    _, meta = http("GET", JAVA + "/market/meta", headers=auth_h)
+    md = meta.get("data") if api_ok(meta) else None
+    report(isinstance(md, dict) and md.get("BTC/USDT") == "#F7931A"
+           and md.get("ETH/USDT") == "#627EEA",
+           "币种品牌色元数据 /market/meta")
+
+    # 14. AI 收益摘要
+    _, ais = http("GET", JAVA + "/ai/summary", headers=auth_h)
+    ad = ais.get("data") if api_ok(ais) else None
+    ok = ad is not None and all(k in ad for k in
+          ("total_pnl", "today_pnl", "running_strategies", "closed_trades", "win_rate")) \
+        and 0 <= ad.get("win_rate", -1) <= 100
+    report(ok, "AI 收益摘要 /ai/summary(累计/今日/胜率)",
+           f"win_rate={ad.get('win_rate') if ad else '--'}")
+
+    print("=" * 60)
+    print("K. 钱包充值/提现 (/wallet)")
+    print("=" * 60)
+
+    # 取充值前快照
+    _, acc_pre = http("GET", JAVA + "/trading/account", headers=auth_h)
+    bal_pre = acc_pre["data"]["available"] if api_ok(acc_pre) else 0
+
+    _, dep = http("POST", JAVA + "/wallet/deposit",
+                  {"currency": "USDT", "amount": 1000, "channel": "USDT-TRC20"},
+                  headers=auth_h)
+    report(api_ok(dep) and dep["data"].get("type") == "deposit"
+           and dep["data"].get("balance_after") is not None,
+           "充值 1000 USDT(模拟入账)",
+           f"balance_after={dep.get('data',{}).get('balance_after') if api_ok(dep) else dep}")
+
+    _, wd = http("POST", JAVA + "/wallet/withdraw",
+                 {"currency": "USDT", "amount": 300, "network": "TRC20",
+                  "address": "TWalletTestAddr"}, headers=auth_h)
+    report(api_ok(wd) and wd["data"].get("type") == "withdraw",
+           "提现 300 USDT(模拟出账)",
+           f"balance_after={wd.get('data',{}).get('balance_after') if api_ok(wd) else wd}")
+
+    _, bad_wd = http("POST", JAVA + "/wallet/withdraw",
+                     {"currency": "USDT", "amount": 99999999, "network": "TRC20"},
+                     headers=auth_h)
+    report(not api_ok(bad_wd), "负向:超额提现被拒",
+           bad_wd.get("message", "")[:60])
+
+    _, bad_cur = http("POST", JAVA + "/wallet/deposit",
+                      {"currency": "BTC", "amount": 1}, headers=auth_h)
+    report(not api_ok(bad_cur), "负向:非支持币种充值被拒",
+           bad_cur.get("message", "")[:50])
+
+    _, txs = http("GET", JAVA + "/wallet/transactions?currency=USDT&limit=10",
+                  headers=auth_h)
+    tlist = txs.get("data") if api_ok(txs) else None
+    report(isinstance(tlist, list) and len(tlist) >= 2
+           and any(t["type"] == "deposit" for t in tlist)
+           and any(t["type"] == "withdraw" for t in tlist),
+           "钱包流水含充值/提现记录",
+           f"count={len(tlist) if isinstance(tlist,list) else '--'}")
+
+    print("=" * 60)
+    print("L. 接口限流 (RateLimit)")
+    print("=" * 60)
+
+    # 监控指标端点(Actuator/Prometheus)
+    st, prom = http("GET", JAVA + "/actuator/prometheus")
+    prom_text = prom if isinstance(prom, str) else str(prom)
+    report(st == 200 and "aiquant_orders_total" in prom_text,
+           "Prometheus 指标端点含下单计数", f"status={st}")
+
+    # 限流冒烟:/auth/password/reset 窗口限 10 次/分,连打 12 次后应 429
+    last_st = 0
+    for _ in range(12):
+        last_st, _ = http("POST", JAVA + "/auth/password/reset",
+                          {"phone": "19900000000", "code": "000000", "new_password": "x"})
+    report(last_st == 429, "限流生效:敏感接口超频返回 429", f"last_status={last_st}")
+
+    print("=" * 60)
+    print("M. 跟单系统 (/copy + /admin/copy)")
+    print("=" * 60)
+
+    # leader 创建监控并发布(免审核直接上架)
+    _, lmon = http("POST", JAVA + "/monitors",
+                   {"symbol": "BTC/USDT", "strategy": "网格区间"}, headers=auth_h)
+    lmon_id = lmon.get("data", {}).get("id") if api_ok(lmon) else None
+    pub_id = None
+    if lmon_id:
+        _, pub = http("POST", JAVA + "/copy/publish",
+                      {"monitor_id": lmon_id, "title": "e2e 网格策略",
+                       "description": "e2e 测试发布,免审核直接上架"}, headers=auth_h)
+        pub_id = pub.get("data", {}).get("id") if api_ok(pub) else None
+        report(api_ok(pub) and pub["data"].get("status") == "published",
+               "leader 发布 → 直接 published(免审核)", str(pub)[:80])
+        _, myp = http("GET", JAVA + "/copy/my-publish", headers=auth_h)
+        report(api_ok(myp) and any(p["id"] == pub_id and p.get("monitorId") == lmon_id
+                                   for p in (myp.get("data") or [])),
+               "我的发布列表含该记录(camelCase 字段)")
+    else:
+        report(False, "leader 创建监控(发布前置)", str(lmon)[:80])
+
+    # 负向:发布他人监控被拒
+    if lmon_id:
+        _, steal = http("POST", JAVA + "/copy/publish",
+                        {"monitor_id": lmon_id, "title": "偷发布"}, headers=reg_auth_h)
+        report(not api_ok(steal), "负向:发布他人监控被拒",
+               steal.get("message", "")[:50])
+
+    # 免审核:发布后立即广场可见
+    _, sq1 = http("GET", JAVA + "/copy/published", headers=reg_auth_h)
+    vis1 = api_ok(sq1) and any(p["id"] == pub_id for p in (sq1.get("data") or []))
+    report(api_ok(sq1) and vis1, "发布后立即广场可见(免审核)")
+
+    # 管理端审核接口保留(历史数据可审):非法动作校验
+    _, bad_act = http("PUT", JAVA + f"/admin/copy/publishes/{pub_id}/status",
+                      {"status": "approved"}, headers=ah)
+    report(not api_ok(bad_act), "负向:非法审核动作被拒",
+           bad_act.get("message", "")[:50])
+
+    # 广场可见(leaderName/followers)
+    _, sq2 = http("GET", JAVA + "/copy/published", headers=reg_auth_h)
+    p2 = next((p for p in (sq2.get("data") or []) if p["id"] == pub_id), None)
+    report(p2 is not None and p2.get("leaderName") and p2.get("followers") == 0,
+           "广场可见(leaderName/followers)",
+           f"leaderName={p2.get('leaderName') if p2 else '--'}")
+
+    # follower 跟单
+    _, fol = http("PUT", JAVA + "/copy/follow",
+                  {"publish_id": pub_id, "ratio": 50}, headers=reg_auth_h)
+    report(api_ok(fol) and fol["data"].get("ratio") == 50
+           and fol["data"].get("status") == "active", "follower 跟单(50%)")
+    _, fols = http("GET", JAVA + "/copy/follows", headers=reg_auth_h)
+    frow = next((f for f in (fols.get("data") or []) if f.get("publishId") == pub_id), None)
+    report(frow is not None and frow.get("title") == "e2e 网格策略"
+           and frow.get("publishStatus") == "published" and frow.get("leaderName"),
+           "我的跟单列表(联表 title/leader/发布状态)")
+
+    # 跟单盈亏跟踪字段(复制笔数/已实现盈亏汇总,成交前应为 0)
+    report(frow is not None and "tradeCount" in frow and "totalPnl" in frow,
+           "我的跟单含 tradeCount/totalPnl 盈亏跟踪字段",
+           f"tradeCount={frow.get('tradeCount') if frow else '--'} totalPnl={frow.get('totalPnl') if frow else '--'}")
+
+    # 广场跟单人数 +1
+    _, sq3 = http("GET", JAVA + "/copy/published", headers=reg_auth_h)
+    p3 = next((p for p in (sq3.get("data") or []) if p["id"] == pub_id), None)
+    report(p3 is not None and p3.get("followers") == 1, "广场跟单人数 +1")
+
+    # 负向:跟自己的策略 / 非法比例
+    _, self_fol = http("PUT", JAVA + "/copy/follow",
+                       {"publish_id": pub_id, "ratio": 10}, headers=auth_h)
+    report(not api_ok(self_fol), "负向:跟单自己的策略被拒",
+           self_fol.get("message", "")[:50])
+    _, bad_ratio = http("PUT", JAVA + "/copy/follow",
+                        {"publish_id": pub_id, "ratio": 33}, headers=reg_auth_h)
+    report(not api_ok(bad_ratio), "负向:非法跟单比例被拒",
+           bad_ratio.get("message", "")[:50])
+
+    # 修改跟单比例(复用同一条记录)
+    _, chg = http("PUT", JAVA + "/copy/follow",
+                  {"publish_id": pub_id, "ratio": 25}, headers=reg_auth_h)
+    report(api_ok(chg) and chg["data"].get("ratio") == 25, "跟单比例调整 50→25")
+
+    # leader 下架 → 跟单自动停止、广场移除
+    _, unp = http("DELETE", JAVA + f"/copy/publish/{pub_id}", headers=auth_h)
+    report(api_ok(unp), "leader 下架策略")
+    _, fols2 = http("GET", JAVA + "/copy/follows", headers=reg_auth_h)
+    frow2 = next((f for f in (fols2.get("data") or []) if f.get("publishId") == pub_id), None)
+    report(frow2 is not None and frow2.get("status") == "stopped"
+           and frow2.get("publishStatus") == "offline",
+           "下架后相关跟单自动停止(stopped/offline)")
+    _, sq4 = http("GET", JAVA + "/copy/published", headers=reg_auth_h)
+    report(api_ok(sq4) and not any(p["id"] == pub_id for p in (sq4.get("data") or [])),
+           "下架后从策略广场移除")
+
+    # 清理:删除 leader 监控
+    if lmon_id:
+        http("DELETE", JAVA + f"/monitors/{lmon_id}", headers=auth_h)
+
+    print("=" * 60)
+    print("M2. 个人策略 (/personal + /admin/risk)")
+    print("=" * 60)
+
+    # 0. 清理 leader 跨轮次残留的 BTC/USDT 仓位(现货 + 合约)
+    _, lfps0 = http("GET", JAVA + "/futures/positions", headers=auth_h)
+    for p in (lfps0.get("data") or []):
+        if p.get("symbol") == "BTC/USDT" and p.get("amount") and p["amount"] > 0:
+            http("POST", JAVA + "/futures/close",
+                 {"position_id": p["id"], "amount": p["amount"]}, headers=auth_h)
+    _, lsps0 = http("GET", JAVA + "/trading/positions", headers=auth_h)
+    for p in (lsps0.get("data") or []):
+        if p.get("symbol") == "BTC/USDT" and p.get("amount") and p["amount"] > 0:
+            http("POST", JAVA + "/trading/orders",
+                 {"symbol": "BTC/USDT", "side": "sell", "order_type": "market",
+                  "amount": p["amount"]}, headers=auth_h)
+    # leader 预划转合约保证金(J 段结束已把保证金划回现货,开空信号需要)
+    http("POST", JAVA + "/futures/transfer",
+         {"direction": "in", "amount": 500}, headers=auth_h)
+
+    # 1. leader 创建「个人策略」监控(默认 running)
+    _, pmon = http("POST", JAVA + "/monitors",
+                   {"symbol": "BTC/USDT", "strategy": "个人策略"}, headers=auth_h)
+    pmon_id = pmon.get("data", {}).get("id") if api_ok(pmon) else None
+    report(api_ok(pmon) and pmon_id and pmon["data"].get("status") == "running",
+           "leader 创建「个人策略」监控(默认 running)", str(pmon)[:80])
+
+    # 2. 负向:非个人策略监控下发信号被拒
+    _, nmon = http("POST", JAVA + "/monitors",
+                   {"symbol": "BTC/USDT", "strategy": "网格区间"}, headers=auth_h)
+    nmon_id = nmon.get("data", {}).get("id") if api_ok(nmon) else None
+    if nmon_id:
+        _, badsig = http("POST", JAVA + f"/personal/monitors/{nmon_id}/signal",
+                         {"action": "open_long", "amount": 0.001}, headers=auth_h)
+        report(not api_ok(badsig), "负向:非个人策略下发信号被拒", badsig.get("message", "")[:50])
+        http("DELETE", JAVA + f"/monitors/{nmon_id}", headers=auth_h)
+    else:
+        report(False, "负向:非个人策略下发信号被拒(前置监控创建失败)")
+
+    # 3. 发布个人策略并走管理端审核
+    mpub_id = None
+    if pmon_id:
+        _, mpub = http("POST", JAVA + "/copy/publish",
+                       {"monitor_id": pmon_id, "title": "e2e 个人策略",
+                        "description": "人工信号台测试"}, headers=auth_h)
+        mpub_id = mpub.get("data", {}).get("id") if api_ok(mpub) else None
+        _, mappr = http("PUT", JAVA + f"/admin/copy/publishes/{mpub_id}/status",
+                        {"status": "published"}, headers=ah)
+        report(api_ok(mpub) and api_ok(mappr), "个人策略发布并审核通过")
+    else:
+        report(False, "个人策略发布(前置监控创建失败)")
+
+    # 4. 负向:固定倍数超范围被拒
+    _, badmul = http("PUT", JAVA + "/copy/follow",
+                     {"publish_id": mpub_id, "mode": "fixed", "multiplier": 15}, headers=reg_auth_h)
+    report(not api_ok(badmul), "负向:跟随倍数 15 超范围被拒", badmul.get("message", "")[:50])
+
+    # 5. 本金比例跟单(balance)
+    _, bfol = http("PUT", JAVA + "/copy/follow",
+                   {"publish_id": mpub_id, "mode": "balance"}, headers=reg_auth_h)
+    report(api_ok(bfol) and bfol["data"].get("mode") == "balance"
+           and bfol["data"].get("ratio") == 100,
+           "follower 本金比例跟单(mode=balance, ratio=100)")
+    mfollow_id = bfol.get("data", {}).get("id") if api_ok(bfol) else None
+
+    # 6. 切换固定倍数(×2)再切回本金比例
+    _, ffol = http("PUT", JAVA + "/copy/follow",
+                   {"publish_id": mpub_id, "mode": "fixed", "multiplier": 2}, headers=reg_auth_h)
+    report(api_ok(ffol) and ffol["data"].get("mode") == "fixed"
+           and ffol["data"].get("fixedMultiplier") == 2, "切换固定倍数跟单(fixedMultiplier=2)")
+    http("PUT", JAVA + "/copy/follow",
+         {"publish_id": mpub_id, "mode": "balance"}, headers=reg_auth_h)
+
+    # 7. 开多信号:leader 买 0.001 BTC → follower 按本金比例自动买入
+    _, s1 = http("POST", JAVA + f"/personal/monitors/{pmon_id}/signal",
+                 {"action": "open_long", "amount": 0.001}, headers=auth_h)
+    ok1 = api_ok(s1) and s1["data"].get("signal", {}).get("action") == "open_long"
+    report(ok1, "开多信号 open_long 下发成功", str(s1)[:100] if not ok1 else "")
+    _, rpos = http("GET", JAVA + "/trading/positions", headers=reg_auth_h)
+    r_btc = next((p for p in (rpos.get("data") or [])
+                  if p.get("symbol") == "BTC/USDT" and p.get("amount", 0) > 0), None)
+    report(r_btc is not None, "balance 模式: follower 自动买入现货多头",
+           f"amount={r_btc.get('amount') if r_btc else '--'}")
+    qty1 = r_btc["amount"] if r_btc else 0
+
+    # 8. 加仓信号
+    _, s2 = http("POST", JAVA + f"/personal/monitors/{pmon_id}/signal",
+                 {"action": "add_long", "amount": 0.001}, headers=auth_h)
+    report(api_ok(s2), "加仓信号 add_long 下发成功")
+    _, rpos2 = http("GET", JAVA + "/trading/positions", headers=reg_auth_h)
+    r_btc2 = next((p for p in (rpos2.get("data") or [])
+                   if p.get("symbol") == "BTC/USDT"), None)
+    qty2 = r_btc2["amount"] if r_btc2 else 0
+    report(qty2 > qty1, "follower 加仓后持仓增加", f"{qty1} → {qty2}")
+
+    # 9. 部分平仓 50%
+    _, s3 = http("POST", JAVA + f"/personal/monitors/{pmon_id}/signal",
+                 {"action": "partial_close", "ratio_pct": 50}, headers=auth_h)
+    report(api_ok(s3), "部分平仓信号 partial_close(50%) 下发成功")
+    _, rpos3 = http("GET", JAVA + "/trading/positions", headers=reg_auth_h)
+    r_btc3 = next((p for p in (rpos3.get("data") or [])
+                   if p.get("symbol") == "BTC/USDT"), None)
+    qty3 = r_btc3["amount"] if r_btc3 else 0
+    report(qty3 < qty2, "follower 部分平仓后持仓减少", f"{qty2} → {qty3}")
+
+    # 10. 开空:自动全平现货多头 → 双方合约开空(5 倍)
+    # follower 新注册合约钱包为 0,先预划转保证金
+    http("POST", JAVA + "/futures/transfer",
+         {"direction": "in", "amount": 500}, headers=reg_auth_h)
+    _, s4 = http("POST", JAVA + f"/personal/monitors/{pmon_id}/signal",
+                 {"action": "open_short", "amount": 0.002, "leverage": 5}, headers=auth_h)
+    report(api_ok(s4), "开空信号 open_short 下发成功", str(s4)[:100] if not api_ok(s4) else "")
+    _, lfpos = http("GET", JAVA + "/futures/positions", headers=auth_h)
+    l_short = next((p for p in (lfpos.get("data") or [])
+                    if p.get("symbol") == "BTC/USDT" and p.get("direction") == "short"
+                    and p.get("amount", 0) > 0), None)
+    report(l_short is not None, "leader 合约空头建立")
+    _, rfpos = http("GET", JAVA + "/futures/positions", headers=reg_auth_h)
+    r_short = next((p for p in (rfpos.get("data") or [])
+                    if p.get("symbol") == "BTC/USDT" and p.get("direction") == "short"
+                    and p.get("amount", 0) > 0), None)
+    report(r_short is not None, "follower 合约空头同步建立")
+    _, rpos4 = http("GET", JAVA + "/trading/positions", headers=reg_auth_h)
+    r_btc4 = next((p for p in (rpos4.get("data") or [])
+                   if p.get("symbol") == "BTC/USDT" and p.get("amount", 0) > 0), None)
+    report(r_btc4 is None, "开空后现货多头自动全平(单方向持仓)")
+
+    # 11. follower 暂停跟单 → 信号不再复制
+    _, paus = http("PUT", JAVA + f"/personal/follows/{mfollow_id}/status",
+                   {"status": "paused"}, headers=reg_auth_h)
+    report(api_ok(paus) and paus["data"].get("status") == "paused", "follower 暂停自己的跟单")
+    _, s5 = http("POST", JAVA + f"/personal/monitors/{pmon_id}/signal",
+                 {"action": "open_long", "amount": 0.001}, headers=auth_h)
+    report(api_ok(s5) and s5["data"].get("executed") == 0,
+           "暂停后信号不再复制(executed=0)")
+    _, rpos5 = http("GET", JAVA + "/trading/positions", headers=reg_auth_h)
+    r_btc5 = next((p for p in (rpos5.get("data") or [])
+                   if p.get("symbol") == "BTC/USDT" and p.get("amount", 0) > 0), None)
+    report(r_btc5 is None, "follower 现货持仓未变化")
+
+    # 12. 负向:非法状态被拒;再恢复跟单
+    _, badst = http("PUT", JAVA + f"/personal/follows/{mfollow_id}/status",
+                    {"status": "frozen"}, headers=reg_auth_h)
+    report(not api_ok(badst), "负向:非法跟单状态被拒", badst.get("message", "")[:50])
+    _, resu = http("PUT", JAVA + f"/personal/follows/{mfollow_id}/status",
+                   {"status": "active"}, headers=reg_auth_h)
+    report(api_ok(resu) and resu["data"].get("status") == "active", "follower 恢复跟单")
+
+    # 13. 换算数量过小 → 复制跳过并产生站内告警(固定倍数×0.1,0.0002 BTC→0.00002,<最小名义额)
+    http("PUT", JAVA + "/copy/follow",
+         {"publish_id": mpub_id, "mode": "fixed", "multiplier": 0.1}, headers=reg_auth_h)
+    _, s6 = http("POST", JAVA + f"/personal/monitors/{pmon_id}/signal",
+                 {"action": "open_long", "amount": 0.0002}, headers=auth_h)
+    report(api_ok(s6) and s6["data"].get("executed") == 0 and s6["data"].get("skipped", 0) >= 1,
+           "换算数量过小被跳过(executed=0, skipped≥1)")
+    http("PUT", JAVA + "/copy/follow",
+         {"publish_id": mpub_id, "mode": "balance"}, headers=reg_auth_h)
+
+    # 14. 站内告警:copy_skip 告警到达 → 已读后清零
+    _, alerts = http("GET", JAVA + "/personal/alerts", headers=reg_auth_h)
+    adata = alerts.get("data") or {}
+    report(api_ok(alerts) and len(adata.get("alerts") or []) >= 1
+           and adata.get("unread", 0) >= 1, "follower 收到 copy_skip 站内告警",
+           f"alerts={len(adata.get('alerts') or [])} unread={adata.get('unread')}")
+    _, readit = http("PUT", JAVA + "/personal/alerts/read", headers=reg_auth_h)
+    _, alerts2 = http("GET", JAVA + "/personal/alerts", headers=reg_auth_h)
+    report(api_ok(readit) and (alerts2.get("data") or {}).get("unread") == 0,
+           "告警全部已读后 unread=0")
+
+    # 15. 信号历史(7 个信号全部落库)
+    _, shis = http("GET", JAVA + f"/personal/monitors/{pmon_id}/signals", headers=auth_h)
+    sigs = shis.get("data") or []
+    report(api_ok(shis) and len(sigs) >= 6 and all(s.get("action") for s in sigs),
+           "信号历史落库(含 action 统计字段)", f"count={len(sigs)}")
+
+    # 16. 全部平仓:leader 现货多头 + 合约空头一次清零
+    _, s7 = http("POST", JAVA + f"/personal/monitors/{pmon_id}/signal",
+                 {"action": "close_all"}, headers=auth_h)
+    report(api_ok(s7), "全部平仓信号 close_all 下发成功")
+    _, lfpos2 = http("GET", JAVA + "/futures/positions", headers=auth_h)
+    l_short2 = next((p for p in (lfpos2.get("data") or [])
+                     if p.get("symbol") == "BTC/USDT" and p.get("direction") == "short"
+                     and p.get("amount", 0) > 0), None)
+    _, lspot2 = http("GET", JAVA + "/trading/positions", headers=auth_h)
+    l_btc2 = next((p for p in (lspot2.get("data") or [])
+                   if p.get("symbol") == "BTC/USDT" and p.get("amount", 0) > 0), None)
+    report(l_short2 is None and l_btc2 is None, "leader 现货+合约全部平仓")
+
+    # 17. 管理端全局风控:一键暂停 → 信号被拒 → 恢复
+    _, cst0 = http("GET", JAVA + "/admin/risk/copy-status", headers=ah)
+    report(api_ok(cst0) and cst0["data"].get("paused") is False, "初始全局风控状态 paused=false")
+    _, ppz = http("PUT", JAVA + "/admin/risk/copy-pause", {"paused": True}, headers=ah)
+    report(api_ok(ppz) and ppz["data"].get("paused") is True, "管理端一键暂停全部跟单")
+    _, s8 = http("POST", JAVA + f"/personal/monitors/{pmon_id}/signal",
+                 {"action": "open_long", "amount": 0.001}, headers=auth_h)
+    report(not api_ok(s8) and "暂停" in s8.get("message", ""), "负向:全局暂停期间信号被拒",
+           s8.get("message", "")[:50])
+    _, ral = http("GET", JAVA + "/admin/risk/alerts?limit=50", headers=ah)
+    report(api_ok(ral) and any(a.get("type") == "risk" for a in (ral.get("data") or [])),
+           "管理端告警列表含全局风控告警")
+    _, rsm = http("PUT", JAVA + "/admin/risk/copy-pause", {"paused": False}, headers=ah)
+    report(api_ok(rsm) and rsm["data"].get("paused") is False, "管理端恢复全局跟单")
+
+    # 17b. 策略参数:保存自定义键值对 → 详情回读一致(全人工定义)
+    if pmon_id:
+        _, pset = http("PUT", JAVA + f"/monitors/{pmon_id}/params",
+                       {"params": {"网格间距": "2%", "止损线": "-5%",
+                                   "目标收益": "10%"}}, headers=auth_h)
+        pset_params = (pset.get("data") or {}).get("params") or ""
+        report(api_ok(pset) and "网格间距" in pset_params and "2%" in pset_params,
+               "保存策略参数(3 组键值对)", str(pset)[:80])
+        _, pdetail = http("GET", JAVA + f"/monitors/{pmon_id}", headers=auth_h)
+        pd_params = (pdetail.get("data") or {}).get("params") or ""
+        report(api_ok(pdetail) and "止损线" in pd_params and "-5%" in pd_params,
+               "监控详情回读策略参数一致")
+        _, pset2 = http("PUT", JAVA + f"/monitors/{pmon_id}/params",
+                        {"params": {"网格间距": "3%"}}, headers=auth_h)
+        report(api_ok(pset2) and "3%" in ((pset2.get("data") or {}).get("params") or ""),
+               "覆盖更新策略参数(旧值清除)")
+    else:
+        report(False, "策略参数保存(前置监控创建失败)")
+
+    # 17c. 负向:参数格式不正确 + 非个人策略设置参数被拒
+    _, badfmt = http("PUT", JAVA + f"/monitors/{pmon_id}/params",
+                     {"params": "not-a-map"}, headers=auth_h)
+    report(not api_ok(badfmt), "负向:参数格式非键值对被拒", badfmt.get("message", "")[:50])
+    _, nmon2 = http("POST", JAVA + "/monitors",
+                    {"symbol": "BTC/USDT", "strategy": "趋势追踪"}, headers=auth_h)
+    nmon2_id = nmon2.get("data", {}).get("id") if api_ok(nmon2) else None
+    if nmon2_id:
+        _, badstrat = http("PUT", JAVA + f"/monitors/{nmon2_id}/params",
+                           {"params": {"网格间距": "2%"}}, headers=auth_h)
+        report(not api_ok(badstrat) and "个人策略" in badstrat.get("message", ""),
+               "负向:非个人策略设置参数被拒", badstrat.get("message", "")[:50])
+        http("DELETE", JAVA + f"/monitors/{nmon2_id}", headers=auth_h)
+    else:
+        report(False, "负向:非个人策略设置参数被拒(前置监控创建失败)")
+
+    # 18. 清理:下架发布(自动停止跟单)+ 删除监控
+    if mpub_id:
+        http("DELETE", JAVA + f"/copy/publish/{mpub_id}", headers=auth_h)
+    if pmon_id:
+        http("DELETE", JAVA + f"/monitors/{pmon_id}", headers=auth_h)
+
+    print("=" * 60)
+    print("N. 开源策略量化机器人 (自动带单)")
+    print("=" * 60)
+
+    # 广场含 4 个系统机器人(isBot=1)
+    _, bsq = http("GET", JAVA + "/copy/published", headers=reg_auth_h)
+    bots = [p for p in (bsq.get("data") or []) if p.get("isBot") == 1]
+    bot_labels = {"EMA均线交叉", "RSI超买超卖", "网格做市", "布林带突破"}
+    report(len(bots) >= 4, "策略广场含 4 个量化机器人",
+           f"bots={[(b.get('strategy'), b.get('symbol')) for b in bots]}")
+    report(all(b.get("leaderName") and b.get("title") and b.get("strategy") in bot_labels
+               for b in bots), "机器人字段齐全(标题/策略/发起人,仅加密标的)",
+           f"bad={[b.get('strategy') for b in bots if b.get('strategy') not in bot_labels]}")
+
+    # follower 跟单机器人
+    bpid = bots[0]["id"]
+    _, bfol = http("PUT", JAVA + "/copy/follow",
+                   {"publish_id": bpid, "ratio": 25}, headers=reg_auth_h)
+    report(api_ok(bfol) and bfol["data"].get("status") == "active", "follower 跟单机器人(25%)")
+    _, bfols = http("GET", JAVA + "/copy/follows", headers=reg_auth_h)
+    bfrow = next((f for f in (bfols.get("data") or []) if f.get("publishId") == bpid), None)
+    report(bfrow is not None and bfrow.get("title") and bfrow.get("tradeCount") is not None
+           and bfrow.get("totalPnl") is not None,
+           "我的跟单含机器人条目与盈亏跟踪字段")
+    # 清理:停止跟单
+    _, bstop = http("DELETE", JAVA + f"/copy/follow/{bfrow['id']}", headers=reg_auth_h)
+    report(api_ok(bstop), "停止跟单机器人")
 
     print("=" * 60)
     print(f"结果: {PASS} 通过 / {FAIL} 失败 / 共 {PASS + FAIL} 项")

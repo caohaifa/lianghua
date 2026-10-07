@@ -1,0 +1,30 @@
+# AI 决策服务(Python FastAPI)守护(systemd)
+#
+# 安装:
+#   cp ai-quant-ai.service /etc/systemd/system/
+#   mkdir -p /opt/ai-quant/python_ai
+#   rsync -a --exclude '.venv' python_ai/ /opt/ai-quant/python_ai/
+#   cd /opt/ai-quant/python_ai && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+#   # 环境变量(OPENAI_API_KEY 等)写入 /opt/ai-quant/python_ai/ai.env,权限 600
+#   systemctl daemon-reload && systemctl enable --now ai-quant-ai
+#
+# 注意:生产直接 uvicorn 启动(不带开发态 --reload)
+
+[Unit]
+Description=AI Quant Python AI Service (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/ai-quant/python_ai
+EnvironmentFile=/opt/ai-quant/python_ai/ai.env
+# 生产多进程:workers ≈ CPU 核数(用 `nproc` 查);reload 不加(开发态才用)
+ExecStart=/opt/ai-quant/python_ai/.venv/bin/uvicorn aiquant.api:app --host 0.0.0.0 --port 8000 --workers 4
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

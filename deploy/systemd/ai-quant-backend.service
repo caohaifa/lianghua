@@ -1,0 +1,34 @@
+# AI 量化 Java 后端守护(systemd,替代开发态 Start-Process)
+#
+# 安装:
+#   cp ai-quant-backend.service /etc/systemd/system/
+#   mkdir -p /opt/ai-quant/backend
+#   cp ai-quant-backend-1.0.0.jar /opt/ai-quant/backend/
+#   # 环境变量(JWT_SECRET/API_KEY_SECRET/MYSQL_*/REDIS_*/CORS_ALLOWED_ORIGINS 等)
+#   # 统一写入 /opt/ai-quant/backend/backend.env,权限 600
+#   systemctl daemon-reload
+#   systemctl enable --now ai-quant-backend
+#
+# 常用: systemctl status ai-quant-backend / journalctl -u ai-quant-backend -f
+
+[Unit]
+Description=AI Quant Java Backend (Spring Boot)
+After=network.target mysql.service redis.service
+Wants=mysql.service redis.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/ai-quant/backend
+EnvironmentFile=/opt/ai-quant/backend/backend.env
+ExecStart=/usr/bin/java -jar -Xms512m -Xmx1024m ai-quant-backend-1.0.0.jar --spring.profiles.active=prod
+# 异常退出 5 秒后自动拉起
+Restart=always
+RestartSec=5
+SuccessExitStatus=143
+# 基础加固
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
