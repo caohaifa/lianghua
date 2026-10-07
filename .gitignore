@@ -1,15 +1,35 @@
 # 构建产物
 java_backend/target/
+java_backend/BOOT-INF/
 flutter_app/build/
 flutter_app/.dart_tool/
 flutter_app/.flutter-plugins*
 admin_web/node_modules/
 admin_web/dist/
 
+# 临时参考拷贝(非本项目源码)
+tmp_crypto_ref/
+
 # 运行时数据与日志
 data/
 *.log
 flutter_*.txt
+# 以下为曾误提交过的调试产物,显式列出防漏网(*.log/flutter_*.txt 已大部分覆盖)
+sms-codes.log
+backend.log
+backend-err.log
+flutter_err.log
+flutter_err.txt
+flutter_out.log
+flutter_ver.txt
+flutter_version.txt
+build_apk.log
+.test_token.txt
+
+# 本地环境变量 / 密钥(防误提交)
+*.env
+!java_backend/src/main/resources/.env.example
+.env.local
 
 # Python
 __pycache__/
