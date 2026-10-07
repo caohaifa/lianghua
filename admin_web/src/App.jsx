@@ -8,11 +8,19 @@ import Dashboard from './pages/Dashboard'
 import Users from './pages/Users'
 import Orders from './pages/Orders'
 import Positions from './pages/Positions'
-import PlanOrders from './pages/PlanOrders'
-import Settlements from './pages/Settlements'
+import Wallet from './pages/Wallet'
 import Strategies from './pages/Strategies'
+import CopyApprovals from './pages/CopyApprovals'
 import Announcements from './pages/Announcements'
 import AuditLogs from './pages/AuditLogs'
+import Alerts from './pages/Alerts'
+import ReferralRewards from './pages/ReferralRewards'
+import Bots from './pages/Bots'
+import SystemConfig from './pages/SystemConfig'
+import Monitors from './pages/Monitors'
+import Banners from './pages/Banners'
+import Faq from './pages/Faq'
+import PushNotifications from './pages/PushNotifications'
 
 /** 需要登录才能访问;未登录跳登录页 */
 function RequireAuth({ children }) {
@@ -49,11 +57,19 @@ export default function App() {
               <Route path="/users" element={<Users />} />
               <Route path="/orders" element={<Orders />} />
               <Route path="/positions" element={<Positions />} />
-              <Route path="/plan-orders" element={<PlanOrders />} />
-              <Route path="/settlements" element={<Settlements />} />
+              <Route path="/wallet" element={<Wallet />} />
               <Route path="/strategies" element={<Strategies />} />
+              <Route path="/copy-approvals" element={<CopyApprovals />} />
               <Route path="/announcements" element={<Announcements />} />
+              <Route path="/alerts" element={<Alerts />} />
               <Route path="/audit-logs" element={<AuditLogs />} />
+              <Route path="/referral" element={<ReferralRewards />} />
+              <Route path="/bots" element={<Bots />} />
+              <Route path="/monitors" element={<Monitors />} />
+              <Route path="/banners" element={<Banners />} />
+              <Route path="/faq" element={<Faq />} />
+              <Route path="/push-notifications" element={<PushNotifications />} />
+              <Route path="/system-config" element={<SystemConfig />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

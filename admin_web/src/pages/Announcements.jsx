@@ -18,6 +18,7 @@ import {
   PlusOutlined,
   EditOutlined,
   SendOutlined,
+  PushpinOutlined,
 } from '@ant-design/icons'
 import client from '../api/client'
 
@@ -27,6 +28,15 @@ const STATUS_FILTER = [
   { label: '已下线', value: 2 },
 ]
 
+const CATEGORIES = [
+  { label: '通用', value: 'general' },
+  { label: '交易', value: 'trading' },
+  { label: '合约', value: 'futures' },
+  { label: 'AI 策略', value: 'ai' },
+  { label: '活动', value: 'activity' },
+]
+const CAT_MAP = Object.fromEntries(CATEGORIES.map((c) => [c.value, c.label]))
+
 export default function Announcements() {
   const [data, setData] = useState({ list: [], total: 0 })
   const [loading, setLoading] = useState(false)
@@ -34,6 +44,7 @@ export default function Announcements() {
   const [size, setSize] = useState(10)
   const [keyword, setKeyword] = useState('')
   const [status, setStatus] = useState()
+  const [category, setCategory] = useState()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form] = Form.useForm()
@@ -43,11 +54,12 @@ export default function Announcements() {
     const params = { page, size }
     if (keyword) params.title = keyword
     if (status !== undefined) params.status = status
+    if (category) params.category = category
     client
       .get('/admin/content/announcements', { params })
       .then((res) => setData(res.data))
       .finally(() => setLoading(false))
-  }, [page, size, keyword, status])
+  }, [page, size, keyword, status, category])
 
   useEffect(() => {
     fetchData()
@@ -56,6 +68,7 @@ export default function Announcements() {
   const openCreate = () => {
     setEditing(null)
     form.resetFields()
+    form.setFieldsValue({ category: 'general', pinned: 0 })
     setModalOpen(true)
   }
 
@@ -105,7 +118,15 @@ export default function Announcements() {
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 70 },
+    {
+      title: '置顶', dataIndex: 'pinned', width: 60,
+      render: (v) => v === 1 ? <PushpinOutlined style={{ color: '#f59e0b' }} /> : null,
+    },
     { title: '标题', dataIndex: 'title' },
+    {
+      title: '分类', dataIndex: 'category', width: 90,
+      render: (v) => <Tag color="blue">{CAT_MAP[v] || v || '通用'}</Tag>,
+    },
     {
       title: '状态',
       dataIndex: 'status',
@@ -155,6 +176,14 @@ export default function Announcements() {
           onChange={(e) => setKeyword(e.target.value)}
           style={{ width: 200 }}
           allowClear
+        />
+        <Select
+          placeholder="分类"
+          allowClear
+          style={{ width: 120 }}
+          value={category}
+          onChange={setCategory}
+          options={CATEGORIES}
         />
         <Select
           placeholder="状态"
@@ -222,6 +251,14 @@ export default function Announcements() {
           >
             <Input placeholder="公告标题" maxLength={100} showCount />
           </Form.Item>
+          <Space size="large">
+            <Form.Item name="category" label="分类">
+              <Select style={{ width: 140 }} options={CATEGORIES} />
+            </Form.Item>
+            <Form.Item name="pinned" label="置顶">
+              <Select style={{ width: 100 }} options={[{ label: '否', value: 0 }, { label: '是', value: 1 }]} />
+            </Form.Item>
+          </Space>
           <Form.Item
             name="content"
             label="正文"

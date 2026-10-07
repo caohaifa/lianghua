@@ -137,10 +137,24 @@ export default function Strategies() {
               灰度
             </Button>
           )}
+          {record.status === 'review' && (
+            <Popconfirm title="确认驳回(退回草稿)该策略?" onConfirm={() => changeStatus(record, 'draft')}>
+              <Button size="small" danger>
+                驳回
+              </Button>
+            </Popconfirm>
+          )}
           {record.status === 'gray' && (
             <Button size="small" type="primary" onClick={() => changeStatus(record, 'online')}>
               上架
             </Button>
+          )}
+          {record.status === 'gray' && (
+            <Popconfirm title="确认从灰度回退(下架)该策略?" onConfirm={() => changeStatus(record, 'offline')}>
+              <Button size="small" danger>
+                回退
+              </Button>
+            </Popconfirm>
           )}
           {record.status === 'online' && (
             <Popconfirm title="确认下架该策略?" onConfirm={() => changeStatus(record, 'offline')}>

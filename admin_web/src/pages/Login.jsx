@@ -80,6 +80,9 @@ export default function Login() {
       <Text style={{ color: '#64748b', marginTop: 16 }}>
         默认账号 admin / admin123
       </Text>
+      <Text style={{ color: '#475569', marginTop: 32, fontSize: 12 }}>
+        AI Quant 运营后台 v1.0.0 · © 2026
+      </Text>
     </div>
   )
 }

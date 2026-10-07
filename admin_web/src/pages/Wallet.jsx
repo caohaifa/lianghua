@@ -3,90 +3,112 @@ import { Card, Table, Input, Select, Button, Space, Tag } from 'antd'
 import { ReloadOutlined, SearchOutlined } from '@ant-design/icons'
 import client from '../api/client'
 
-const STATUS_OPTIONS = [
-  { label: '待支付', value: 'pending' },
-  { label: '已支付', value: 'paid' },
-  { label: '已过期', value: 'expired' },
+const TYPE_OPTIONS = [
+  { label: '充值', value: 'deposit' },
+  { label: '提现', value: 'withdraw' },
+  { label: '交易手续费', value: 'fee' },
+  { label: '其他', value: 'other' },
 ]
 
-export default function PlanOrders() {
+const STATUS_MAP = {
+  pending: { label: '处理中', color: 'orange' },
+  success: { label: '成功', color: 'green' },
+  failed: { label: '失败', color: 'red' },
+}
+
+export default function Wallet() {
   const [data, setData] = useState({ list: [], total: 0 })
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
   const [size, setSize] = useState(10)
   const [keyword, setKeyword] = useState('')
-  const [status, setStatus] = useState()
+  const [type, setType] = useState()
 
   const fetchData = useCallback(() => {
     setLoading(true)
     const params = { page, size }
     if (keyword) params.keyword = keyword
-    if (status) params.status = status
+    if (type) params.type = type
     client
-      .get('/admin/billing/plan-orders', { params })
+      .get('/admin/billing/wallet', { params })
       .then((res) => setData(res.data))
       .finally(() => setLoading(false))
-  }, [page, size, keyword, status])
+  }, [page, size, keyword, type])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
   const columns = [
-    { title: 'ID', dataIndex: 'id', width: 80 },
+    { title: 'ID', dataIndex: 'id', width: 70 },
     { title: '用户ID', dataIndex: 'userId', width: 180 },
     {
-      title: '套餐',
-      dataIndex: 'planLevel',
-      width: 130,
-      render: (v) => <Tag color="blue">{planLabel(v)}</Tag>,
+      title: '币种',
+      dataIndex: 'currency',
+      width: 80,
+      render: (v) => <Tag color="blue">{v}</Tag>,
+    },
+    {
+      title: '类型',
+      dataIndex: 'type',
+      width: 110,
+      render: (v) => {
+        const opt = TYPE_OPTIONS.find((o) => o.value === v)
+        return <Tag>{opt ? opt.label : v}</Tag>
+      },
     },
     {
       title: '金额',
       dataIndex: 'amount',
       align: 'right',
-      render: (v) => `¥${Number(v).toFixed(2)}`,
+      width: 120,
+      render: (v) => {
+        const num = Number(v)
+        const isOut = ['withdraw', 'fee'].includes(null)
+        return (
+          <span style={{ fontWeight: 600, color: num >= 0 ? '#10b981' : '#ef4444' }}>
+            {num >= 0 ? '+' : ''}
+            {num.toFixed(4)}
+          </span>
+        )
+      },
     },
+    { title: '渠道', dataIndex: 'channel', width: 100 },
     {
-      title: '周期',
-      dataIndex: 'period',
-      width: 90,
-      render: (v) => ({ month: '月付', quarter: '季付', year: '年付' }[v] || v),
+      title: '地址',
+      dataIndex: 'address',
+      ellipsis: true,
+      render: (v) => v || '-',
     },
     {
       title: '状态',
       dataIndex: 'status',
-      width: 100,
+      width: 90,
       render: (v) => {
-        const map = {
-          pending: ['待支付', 'orange'],
-          paid: ['已支付', 'green'],
-          expired: ['已过期', 'default'],
-        }
-        const [text, color] = map[v] || [v]
-        return <Tag color={color}>{text}</Tag>
+        const s = STATUS_MAP[v] || { label: v, color: 'default' }
+        return <Tag color={s.color}>{s.label}</Tag>
       },
     },
-    { title: '创建时间', dataIndex: 'createdAt', width: 180 },
+    { title: '时间', dataIndex: 'createdAt', width: 170 },
   ]
 
   return (
-    <Card title="订阅订单">
+    <Card title="钱包流水">
       <Space style={{ marginBottom: 16 }} wrap>
         <Input
           placeholder="用户ID"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
-          style={{ width: 220 }}
+          style={{ width: 200 }}
           allowClear
         />
         <Select
-          placeholder="状态"
+          placeholder="类型"
           allowClear
-          style={{ width: 120 }}
-          value={status}
-          onChange={setStatus}
-          options={STATUS_OPTIONS}
+          style={{ width: 130 }}
+          value={type}
+          onChange={setType}
+          options={TYPE_OPTIONS}
         />
         <Button type="primary" icon={<SearchOutlined />} onClick={() => setPage(1)}>
           查询
@@ -100,6 +122,7 @@ export default function PlanOrders() {
         columns={columns}
         dataSource={data.list}
         loading={loading}
+        scroll={{ x: 1200 }}
         pagination={{
           current: page,
           pageSize: size,
@@ -114,8 +137,4 @@ export default function PlanOrders() {
       />
     </Card>
   )
-}
-
-function planLabel(level) {
-  return { basic: '基础版', advanced: '进阶版', professional: '专业版' }[level] || level
 }

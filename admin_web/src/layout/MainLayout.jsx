@@ -11,6 +11,15 @@ import {
   SafetyCertificateOutlined,
   NotificationOutlined,
   WalletOutlined,
+  TeamOutlined,
+  AlertOutlined,
+  GiftOutlined,
+  RobotOutlined,
+  MonitorOutlined,
+  SettingOutlined,
+  PictureOutlined,
+  QuestionCircleOutlined,
+  BellOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
@@ -34,8 +43,8 @@ const menuItems = [
     icon: <WalletOutlined />,
     label: '计费管理',
     children: [
-      { key: '/plan-orders', label: '订阅订单' },
-      { key: '/settlements', label: '分成结算' },
+      { key: '/wallet', label: '钱包流水' },
+      { key: '/referral', icon: <GiftOutlined />, label: '返佣团队' },
     ],
   },
   {
@@ -44,9 +53,17 @@ const menuItems = [
     label: '内容管理',
     children: [
       { key: '/strategies', icon: <FundOutlined />, label: '策略管理' },
+      { key: '/copy-approvals', icon: <TeamOutlined />, label: '跟单审核' },
+      { key: '/monitors', icon: <MonitorOutlined />, label: '监控总览' },
+      { key: '/bots', icon: <RobotOutlined />, label: '机器人管理' },
       { key: '/announcements', icon: <NotificationOutlined />, label: '系统公告' },
+      { key: '/banners', icon: <PictureOutlined />, label: '轮播图管理' },
+      { key: '/faq', icon: <QuestionCircleOutlined />, label: '帮助中心' },
+      { key: '/push-notifications', icon: <BellOutlined />, label: '推送通知' },
     ],
   },
+  { key: '/alerts', icon: <AlertOutlined />, label: '风控告警' },
+  { key: '/system-config', icon: <SettingOutlined />, label: '系统配置' },
   { key: '/audit-logs', icon: <AuditOutlined />, label: '审计日志' },
 ]
 

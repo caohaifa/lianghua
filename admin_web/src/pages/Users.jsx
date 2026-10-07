@@ -10,8 +10,11 @@ import {
   Modal,
   message,
   Popconfirm,
+  Drawer,
+  Descriptions,
+  Divider,
 } from 'antd'
-import { ReloadOutlined, SearchOutlined } from '@ant-design/icons'
+import { ReloadOutlined, SearchOutlined, EyeOutlined } from '@ant-design/icons'
 import client from '../api/client'
 
 const RISK_OPTIONS = ['R1', 'R2', 'R3', 'R4', 'R5'].map((v) => ({
@@ -27,6 +30,8 @@ export default function Users() {
   const [keyword, setKeyword] = useState('')
   const [status, setStatus] = useState()
   const [riskLevel, setRiskLevel] = useState()
+  const [detail, setDetail] = useState(null)
+  const [detailOpen, setDetailOpen] = useState(false)
 
   const fetchData = useCallback(() => {
     setLoading(true)
@@ -109,10 +114,13 @@ export default function Users() {
     { title: '注册时间', dataIndex: 'createdAt', width: 180 },
     {
       title: '操作',
-      width: 200,
+      width: 260,
       fixed: 'right',
       render: (_, record) => (
         <Space>
+          <Button size="small" icon={<EyeOutlined />} onClick={() => { setDetail(record); setDetailOpen(true) }}>
+            详情
+          </Button>
           <Button size="small" onClick={() => changeRisk(record)}>
             风险等级
           </Button>
@@ -190,6 +198,42 @@ export default function Users() {
           },
         }}
       />
+
+      <Drawer
+        title="用户详情"
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        width={480}
+      >
+        {detail && (
+          <div>
+            <Descriptions column={1} bordered size="small">
+              <Descriptions.Item label="用户ID">{detail.userId}</Descriptions.Item>
+              <Descriptions.Item label="手机号">{detail.phone}</Descriptions.Item>
+              <Descriptions.Item label="昵称">{detail.nickname || '-'}</Descriptions.Item>
+              <Descriptions.Item label="邀请人">{detail.invitedBy || '-'}</Descriptions.Item>
+              <Descriptions.Item label="风险等级">
+                {detail.riskLevel ? <Tag color={riskColor(detail.riskLevel)}>{detail.riskLevel}</Tag> : <Tag>未测评</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label="协议签署">
+                {detail.agreementSigned ? <Tag color="green">已签署</Tag> : <Tag>未签署</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label="账号状态">
+                {detail.status === 0 ? <Tag color="green">正常</Tag> : <Tag color="red">冻结</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label="注册时间">{detail.createdAt}</Descriptions.Item>
+              <Descriptions.Item label="最后登录">{detail.lastLoginAt || '-'}</Descriptions.Item>
+            </Descriptions>
+            <Divider />
+            <Space wrap>
+              <Button size="small" onClick={() => changeRisk(detail)}>调整风险等级</Button>
+              <Button size="small" danger={detail.status === 0} onClick={() => { toggleStatus(detail); setDetailOpen(false) }}>
+                {detail.status === 0 ? '冻结用户' : '解冻用户'}
+              </Button>
+            </Space>
+          </div>
+        )}
+      </Drawer>
     </Card>
   )
 }

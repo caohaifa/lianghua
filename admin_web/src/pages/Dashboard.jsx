@@ -52,11 +52,11 @@ export default function Dashboard() {
       sub: `订单 ${s.orderCount} 笔`,
     },
     {
-      title: '分成收入',
-      value: Number(s.settlementIncome).toFixed(2),
+      title: '在线策略',
+      value: s.onlineStrategies,
       icon: <DollarOutlined />,
       color: '#8b5cf6',
-      sub: `在线策略 ${s.onlineStrategies} · 持仓 ${s.openPositions}`,
+      sub: `持仓 ${s.openPositions} 个`,
     },
   ]
 
@@ -110,6 +110,14 @@ export default function Dashboard() {
         <Col xs={24} lg={10}>
           <Card title="用户风险等级分布">
             <BarChart data={data.riskDistribution || []} />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} lg={24}>
+          <Card title="近 7 天成交额趋势">
+            <VolumeChart data={data.tradeVolume || []} color="#f59e0b" label="成交额" />
           </Card>
         </Col>
       </Row>
@@ -201,5 +209,30 @@ function BarChart({ data }) {
 function Empty() {
   return (
     <div style={{ textAlign: 'center', color: '#94a3b8', padding: 40 }}>暂无数据</div>
+  )
+}
+
+/** 金额趋势柱状图(成交额/分成收入) */
+function VolumeChart({ data, color, label }) {
+  if (!data.length) return <Empty />
+  const values = data.map((d) => Number(d.volume ?? d.income ?? 0))
+  const max = Math.max(...values, 1)
+  return (
+    <div>
+      {data.map((d, i) => {
+        const v = Number(d.volume ?? d.income ?? 0)
+        return (
+          <div key={i} style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+              <span style={{ color: '#64748b' }}>{String(d.date).slice(5)}</span>
+              <span style={{ fontWeight: 600 }}>¥{v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+            <div style={{ height: 8, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ width: `${(v / max) * 100}%`, height: '100%', background: color, borderRadius: 4 }} />
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
 }
